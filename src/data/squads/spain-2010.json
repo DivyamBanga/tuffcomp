@@ -1,0 +1,25 @@
+{
+  "id": "spain-2010",
+  "team": "Spain",
+  "year": 2010,
+  "kind": "nation",
+  "players": [
+    { "id": "spain-2010-casillas", "name": "Iker Casillas", "nation": "Spain", "club": "Real Madrid", "league": "La Liga", "year": 2010, "overall": 89, "positions": ["GK"], "attributes": { "pace": 48, "shooting": 15, "passing": 60, "dribbling": 40, "defending": 89, "physical": 76 } },
+    { "id": "spain-2010-valdes", "name": "Víctor Valdés", "nation": "Spain", "club": "Barcelona", "league": "La Liga", "year": 2010, "overall": 84, "positions": ["GK"], "attributes": { "pace": 44, "shooting": 12, "passing": 58, "dribbling": 38, "defending": 84, "physical": 74 } },
+    { "id": "spain-2010-pique", "name": "Gerard Piqué", "nation": "Spain", "club": "Barcelona", "league": "La Liga", "year": 2010, "overall": 85, "positions": ["CB"], "attributes": { "pace": 70, "shooting": 38, "passing": 72, "dribbling": 65, "defending": 85, "physical": 80 } },
+    { "id": "spain-2010-puyol", "name": "Carles Puyol", "nation": "Spain", "club": "Barcelona", "league": "La Liga", "year": 2010, "overall": 86, "positions": ["CB"], "attributes": { "pace": 74, "shooting": 32, "passing": 62, "dribbling": 58, "defending": 88, "physical": 85 } },
+    { "id": "spain-2010-albiol", "name": "Raúl Albiol", "nation": "Spain", "club": "Real Madrid", "league": "La Liga", "year": 2010, "overall": 78, "positions": ["CB"], "attributes": { "pace": 68, "shooting": 28, "passing": 58, "dribbling": 52, "defending": 79, "physical": 78 } },
+    { "id": "spain-2010-ramos", "name": "Sergio Ramos", "nation": "Spain", "club": "Real Madrid", "league": "La Liga", "year": 2010, "overall": 86, "positions": ["RB", "CB"], "attributes": { "pace": 82, "shooting": 55, "passing": 70, "dribbling": 70, "defending": 84, "physical": 80 } },
+    { "id": "spain-2010-arbeloa", "name": "Álvaro Arbeloa", "nation": "Spain", "club": "Liverpool", "league": "Premier League", "year": 2010, "overall": 77, "positions": ["RB"], "attributes": { "pace": 76, "shooting": 35, "passing": 62, "dribbling": 62, "defending": 76, "physical": 72 } },
+    { "id": "spain-2010-capdevila", "name": "Joan Capdevila", "nation": "Spain", "club": "Villarreal", "league": "La Liga", "year": 2010, "overall": 78, "positions": ["LB"], "attributes": { "pace": 74, "shooting": 40, "passing": 66, "dribbling": 66, "defending": 76, "physical": 72 } },
+    { "id": "spain-2010-busquets", "name": "Sergio Busquets", "nation": "Spain", "club": "Barcelona", "league": "La Liga", "year": 2010, "overall": 85, "positions": ["CDM"], "attributes": { "pace": 58, "shooting": 45, "passing": 82, "dribbling": 74, "defending": 82, "physical": 74 } },
+    { "id": "spain-2010-xabialonso", "name": "Xabi Alonso", "nation": "Spain", "club": "Real Madrid", "league": "La Liga", "year": 2010, "overall": 86, "positions": ["CM", "CDM"], "attributes": { "pace": 60, "shooting": 68, "passing": 88, "dribbling": 72, "defending": 74, "physical": 74 } },
+    { "id": "spain-2010-xavi", "name": "Xavi", "nation": "Spain", "club": "Barcelona", "league": "La Liga", "year": 2010, "overall": 90, "positions": ["CM"], "attributes": { "pace": 62, "shooting": 65, "passing": 93, "dribbling": 85, "defending": 62, "physical": 60 } },
+    { "id": "spain-2010-fabregas", "name": "Cesc Fàbregas", "nation": "Spain", "club": "Arsenal", "league": "Premier League", "year": 2010, "overall": 85, "positions": ["CM", "CAM"], "attributes": { "pace": 68, "shooting": 74, "passing": 88, "dribbling": 84, "defending": 58, "physical": 62 } },
+    { "id": "spain-2010-iniesta", "name": "Andrés Iniesta", "nation": "Spain", "club": "Barcelona", "league": "La Liga", "year": 2010, "overall": 90, "positions": ["CAM", "LW", "CM"], "attributes": { "pace": 72, "shooting": 75, "passing": 88, "dribbling": 93, "defending": 55, "physical": 58 } },
+    { "id": "spain-2010-villa", "name": "David Villa", "nation": "Spain", "club": "Barcelona", "league": "La Liga", "year": 2010, "overall": 88, "positions": ["ST", "LW"], "attributes": { "pace": 84, "shooting": 87, "passing": 74, "dribbling": 84, "defending": 30, "physical": 66 } },
+    { "id": "spain-2010-torres", "name": "Fernando Torres", "nation": "Spain", "club": "Liverpool", "league": "Premier League", "year": 2010, "overall": 87, "positions": ["ST"], "attributes": { "pace": 90, "shooting": 86, "passing": 66, "dribbling": 82, "defending": 25, "physical": 74 } },
+    { "id": "spain-2010-pedro", "name": "Pedro", "nation": "Spain", "club": "Barcelona", "league": "La Liga", "year": 2010, "overall": 81, "positions": ["RW", "LW"], "attributes": { "pace": 85, "shooting": 72, "passing": 74, "dribbling": 82, "defending": 38, "physical": 62 } },
+    { "id": "spain-2010-navas", "name": "Jesús Navas", "nation": "Spain", "club": "Sevilla", "league": "La Liga", "year": 2010, "overall": 78, "positions": ["RW", "RM"], "attributes": { "pace": 92, "shooting": 62, "passing": 70, "dribbling": 82, "defending": 34, "physical": 58 } }
+  ]
+}
