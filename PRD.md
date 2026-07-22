@@ -12,14 +12,14 @@ Last updated: 2026-07-22.
 
 ## 1. Vision
 
-Tap an empty slot in a 4-3-3 and spin. You get one real World Cup team and year (like France
-2022) - take one player from that squad's real roster for the slot you tapped, then spin again
-for the next slot. Repeat until your XI is full. Every spin is a fresh random Team-Year, so
-your finished lineup is a mix of players pulled from different real squads across World Cup
-history. Once everyone is done, a scoring engine analyzes each team on more than raw talent. It
-looks at how well players fit their positions, how much nation chemistry the squad has, and
-whether the team is balanced or is missing a key job. The best-built team wins, fairly and
-transparently.
+Spin and you get one real World Cup team and year (like France 2022). Take one player from that
+squad's real roster, then place them wherever you want on your 4-3-3 - any open slot they can
+legally play. Spin again for the next pick. Repeat until your XI is full. Every spin is a fresh
+random Team-Year, so your finished lineup is a mix of players pulled from different real squads
+across World Cup history. Once everyone is done, a scoring engine analyzes each team on more
+than raw talent. It looks at how well players fit their positions, how much nation chemistry the
+squad has, and whether the team is balanced or is missing a key job. The best-built team wins,
+fairly and transparently.
 
 Two sports, four modes total. We ship one fully working mode first, then reuse the same
 engine and screens for the rest.
@@ -83,8 +83,8 @@ balance.
 - Slot: a single position on the pitch that holds one player (for example the left back slot).
   Each slot has a cosmetic label (LB, CB, CDM, ST, ...) for how it's drawn on the pitch, but its
   eligibility is decided by its broad position (DEF, MID, ...).
-- Spin: the action of tapping an empty slot, which reveals a random Team-Year and lets you pick
-  one eligible player from it for that slot.
+- Spin: reveals a random Team-Year and its roster. You pick any one player from it whose
+  position still has an open slot somewhere on your pitch, then place them by tapping that slot.
 - Lineup / XI: the full set of filled slots that make up a built team.
 - Rating: the engine's 0 to 100 score for a built team, with a visible breakdown. Not yet built
   (Phase 3).
@@ -103,15 +103,16 @@ the only formation the game supports (see the "one formation" decision in sectio
 direct consequence of how the real position data is shaped, and it also just keeps the game
 easier to pick up).
 
-Flow, repeated once per slot:
-1. Tap an empty slot on the pitch.
-2. Spin. The game reveals a random Team-Year card (for example France 2022) from the full pool
+Flow, repeated once per pick:
+1. Spin. The game reveals a random Team-Year card (for example France 2022) from the full pool
    of real World Cup squads (see section 7).
-3. Pick. You see that squad's real roster, filtered to players eligible for the slot you
-   tapped (illegal positions are never offered, so you can never put a defender at forward).
-   Take one player, or spin again if you don't like this squad.
-4. Repeat for the next empty slot. Every spin is independent and fully random, so your XI ends
-   up built from players pulled out of many different real squads and years.
+2. Pick. You see that squad's real roster, filtered to players who still have at least one open
+   slot on your pitch they're eligible for (illegal positions are never offered, so you can never
+   put a defender at forward). Take any one player, or spin again if you don't like this squad.
+3. Place. Your pitch highlights every open slot that player can legally fill - tap one to place
+   them there. If more than one slot fits (say both CB slots are open), you choose which.
+4. Repeat for the next pick. Every spin is independent and fully random, so your XI ends up
+   built from players pulled out of many different real squads and years.
 5. Rate. Once all 11 slots are filled, the engine scores your XI and shows the breakdown. Not
    yet built - this is Phase 3.
 
@@ -481,14 +482,18 @@ Design principles: clean, uncluttered, fast, and mobile friendly since friends w
 phones. It should read as a polished, finished game, not a prototype.
 
 Key screens (current, as built):
-- Build (the pitch): a single always-visible 4-3-3 pitch with 11 tappable slots and a fill
-  counter. There's no separate home/mode-picker screen yet - World Cup mode with a single
-  formation is the entire game so far.
-- Spin and pick sheet: tapping an empty slot opens this as a bottom sheet. It plays a brief
+- Build (the pitch): a single always-visible 4-3-3 pitch with 11 tappable slots, a fill counter,
+  and a single SPIN button. There's no separate home/mode-picker screen yet - World Cup mode
+  with a single formation is the entire game so far.
+- Spin and pick sheet: opened by the SPIN button, not tied to any particular slot. Plays a brief
   slot-machine flicker through squad names, lands on one real Team-Year, and shows that squad's
-  roster filtered to players eligible for the tapped slot. Pick one to fill the slot, or spin
-  again for a different squad. Tapping a filled slot clears it directly - no confirmation, since
-  refilling is one tap away.
+  roster filtered to players who have at least one open slot somewhere in the lineup. Pick one,
+  or spin again for a different squad.
+- Placement mode: after picking a player, the sheet closes and the pitch itself becomes the
+  picker - every open slot that player is eligible for lights up, everything else dims and goes
+  inert, and tapping a lit slot places them there. A banner above the pitch names who you're
+  placing and offers a cancel. Tapping an already-filled slot (outside placement mode) clears it
+  directly - no confirmation, since refilling is one tap away.
 
 Planned, not yet built:
 - Results: final rating with the four-component breakdown and a generated summary (Phase 3).
@@ -542,16 +547,20 @@ the end of each phase, per your request for commits throughout development.
 - This did not scale to "many teams, many years" - see the redesign directly below, which
   replaced both the position system and the squad data with an automated pipeline.
 
-### Phase 2 - Build screen (done, redesigned mid-phase)
+### Phase 2 - Build screen (done, redesigned twice mid-phase)
 - First build: one whole spun squad, freely build an XI from it, formation selector (4-3-3 and
   4-4-2). This matched the original PRD but not what actually felt good to build with.
-- Redesign, same phase: switched to the real mechanic that shipped - tap an empty slot, spin a
-  random real Team-Year, pick one eligible player from its roster for that slot, repeat. Formation
-  reduced to 4-3-3 only. Position system simplified to GK/DEF/MID/FWD (section 5.3), which is what
-  unlocked replacing the 10 hand-curated squads with a real, automatically generated dataset of
-  413 squads / ~9,500 players spanning 1970-2026 (section 7). Verify: you can fill all 11 slots
-  through repeated spin-and-pick, illegal players are never offered for a slot, and the full
-  dataset passes `canFillFormation` for every squad (Vitest, currently 15 passing tests).
+- First redesign: tap an empty slot, spin a random real Team-Year, pick one eligible player from
+  its roster for that slot, repeat. Formation reduced to 4-3-3 only. Position system simplified
+  to GK/DEF/MID/FWD (section 5.3), which is what unlocked replacing the 10 hand-curated squads
+  with a real, automatically generated dataset of 413 squads / ~9,500 players spanning 1970-2026
+  (section 7).
+- Second redesign, same phase: spin is untargeted, not tied to any slot. Spin, pick any eligible
+  player off the full revealed roster, then place them by tapping a highlighted open slot on the
+  pitch - this is the mechanic that actually shipped (section 4.1, section 9). Verify: you can
+  fill all 11 slots through repeated spin-pick-place, illegal players are never offered, only
+  eligible open slots are tappable during placement, and the full dataset passes
+  `canFillFormation` for every squad (Vitest, currently 15 passing tests).
 
 ### Phase 3 - Rating engine
 - Implement Q, F, C, B and the final blended rating as a pure module. Verify: unit tests for
@@ -628,7 +637,7 @@ the end of each phase, per your request for commits throughout development.
 
 - OVR: a player's overall rating, 0 to 99, algorithmically derived (section 7.3).
 - Team-Year card: a real team from a specific year, revealed by a spin.
-- Spin: tap an empty slot, get a random Team-Year, pick one eligible player from it.
+- Spin: reveals a random Team-Year, pick an eligible player from it, then place them on the pitch.
 - XI: a full built soccer lineup of eleven players.
 - Snake order: turn order in multiplayer, 1-2-3-3-2-1, so no one always picks last.
 - Chemistry: bonus from players sharing a nation (section 5.2).

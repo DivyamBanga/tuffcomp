@@ -1,15 +1,19 @@
 import { motion } from 'motion/react'
 import { FORMATION_433 } from '../engine/formations'
+import { bestCompatibility } from '../engine/positions'
 import type { Player } from '../types'
 import { slotCoordinates } from './pitchLayout'
 
 interface PitchProps {
   assignments: Record<string, Player | null>
-  onEmptySlotClick: (slotId: string) => void
+  // Set while a player picked from a spin is waiting to be placed. Only
+  // empty, eligible slots are interactive in that state.
+  pendingPlayer: Player | null
+  onEligibleSlotClick: (slotId: string) => void
   onFilledSlotClick: (slotId: string) => void
 }
 
-export function Pitch({ assignments, onEmptySlotClick, onFilledSlotClick }: PitchProps) {
+export function Pitch({ assignments, pendingPlayer, onEligibleSlotClick, onFilledSlotClick }: PitchProps) {
   return (
     <div className="pitch-stripes relative mx-auto mt-4 aspect-[3/4] w-full max-w-sm flex-1 overflow-hidden rounded-3xl border border-white/10 bg-turf shadow-inner">
       <div className="absolute inset-3 rounded-2xl border-2 border-white/15" />
@@ -20,13 +24,27 @@ export function Pitch({ assignments, onEmptySlotClick, onFilledSlotClick }: Pitc
         const { x, y } = slotCoordinates(slot.id)
         const player = assignments[slot.id]
 
+        const eligible =
+          pendingPlayer !== null && player === null && bestCompatibility(pendingPlayer.positions, slot.position) > 0
+        const inert = pendingPlayer !== null && !eligible
+
+        function handleClick() {
+          if (pendingPlayer) {
+            if (eligible) onEligibleSlotClick(slot.id)
+            return
+          }
+          if (player) onFilledSlotClick(slot.id)
+        }
+
         return (
           <button
             key={slot.id}
             type="button"
-            onClick={() => (player ? onFilledSlotClick(slot.id) : onEmptySlotClick(slot.id))}
+            onClick={handleClick}
             style={{ left: `${x}%`, top: `${y}%` }}
-            className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1"
+            className={`absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 transition-opacity ${
+              inert ? 'pointer-events-none opacity-30' : ''
+            }`}
           >
             <motion.span
               key={player?.id ?? 'empty'}
@@ -36,11 +54,13 @@ export function Pitch({ assignments, onEmptySlotClick, onFilledSlotClick }: Pitc
               className={`relative flex h-12 w-12 items-center justify-center rounded-full border-2 font-display text-base shadow-lg ${
                 player
                   ? 'border-gold bg-ink text-gold'
-                  : 'animate-pulse border-dashed border-white/40 bg-white/10 text-white/50'
+                  : eligible
+                    ? 'animate-pulse border-lime bg-lime/20 text-lime'
+                    : 'border-dashed border-white/40 bg-white/10 text-white/50'
               }`}
             >
               {player ? player.overall : slot.label}
-              {player && (
+              {player && !pendingPlayer && (
                 <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-ink text-[10px] text-mist">
                   ×
                 </span>

@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { FORMATION_433 } from '../engine/formations'
-import { bestCompatibility } from '../engine/positions'
-import { useGameStore } from '../game/store'
+import { hasEligibleOpenSlot, useGameStore } from '../game/store'
 import type { Squad } from '../types'
 import { flagFor } from './flags'
 
@@ -9,20 +7,27 @@ const SPIN_TICKS = 14
 const TICK_MS_START = 60
 const TICK_MS_END = 190
 
+const POSITION_LABEL: Record<string, string> = {
+  GK: 'Goalkeeper',
+  DEF: 'Defender',
+  MID: 'Midfielder',
+  FWD: 'Forward',
+}
+
 export function SpinPickSheet() {
   const allSquads = useGameStore((s) => s.allSquads)
   const assignments = useGameStore((s) => s.assignments)
-  const pendingSlotId = useGameStore((s) => s.pendingSlotId)
+  const spinOpen = useGameStore((s) => s.spinOpen)
   const pendingSquad = useGameStore((s) => s.pendingSquad)
-  const revealForSlot = useGameStore((s) => s.revealForSlot)
-  const rerollPending = useGameStore((s) => s.rerollPending)
-  const cancelPending = useGameStore((s) => s.cancelPending)
-  const pickPlayer = useGameStore((s) => s.pickPlayer)
+  const revealSquad = useGameStore((s) => s.revealSquad)
+  const rerollSquad = useGameStore((s) => s.rerollSquad)
+  const cancelSpin = useGameStore((s) => s.cancelSpin)
+  const selectPlayer = useGameStore((s) => s.selectPlayer)
 
   const [previewSquad, setPreviewSquad] = useState<Squad | null>(null)
   const tickRef = useRef(0)
 
-  const spinning = pendingSlotId !== null && pendingSquad === null
+  const spinning = spinOpen && pendingSquad === null
 
   useEffect(() => {
     if (!spinning || allSquads.length === 0) return
@@ -33,7 +38,7 @@ export function SpinPickSheet() {
       tickRef.current += 1
       setPreviewSquad(allSquads[Math.floor(Math.random() * allSquads.length)])
       if (tickRef.current >= SPIN_TICKS) {
-        revealForSlot()
+        revealSquad()
         return
       }
       const progress = tickRef.current / SPIN_TICKS
@@ -42,29 +47,26 @@ export function SpinPickSheet() {
     tick()
 
     return () => window.clearTimeout(timeoutId)
-  }, [spinning, allSquads, revealForSlot])
+  }, [spinning, allSquads, revealSquad])
 
-  if (pendingSlotId === null) return null
+  if (!spinOpen) return null
 
-  const slot = FORMATION_433.slots.find((s) => s.id === pendingSlotId)
-  if (!slot) return null
-
-  const usedIds = new Set(Object.values(assignments).filter(Boolean).map((p) => p!.id))
   const eligible = pendingSquad
     ? pendingSquad.players
-        .map((player) => ({ player, fit: bestCompatibility(player.positions, slot.position) }))
-        .filter(({ player, fit }) => fit > 0 && !usedIds.has(player.id))
-        .sort((a, b) => b.fit - a.fit || b.player.overall - a.player.overall)
+        .filter((player) => hasEligibleOpenSlot(player, assignments))
+        .sort((a, b) => b.overall - a.overall)
     : []
 
   return (
     <div className="fixed inset-0 z-20 flex items-end bg-ink/85 backdrop-blur-sm">
       <div className="max-h-[80vh] w-full overflow-y-auto rounded-t-3xl border-t border-white/10 bg-panel p-5">
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="font-display text-2xl tracking-wide text-chalk">FILLING {slot.label}</h3>
+          <h3 className="font-display text-2xl tracking-wide text-chalk">
+            {spinning ? 'SPINNING' : 'PICK A PLAYER'}
+          </h3>
           <button
             type="button"
-            onClick={cancelPending}
+            onClick={cancelSpin}
             className="font-display text-sm tracking-wide text-mist hover:text-chalk"
           >
             CANCEL
@@ -88,7 +90,7 @@ export function SpinPickSheet() {
               </span>
               <button
                 type="button"
-                onClick={rerollPending}
+                onClick={rerollSquad}
                 className="font-display text-xs tracking-wide text-lime hover:text-lime-dim"
               >
                 SPIN AGAIN
@@ -96,16 +98,16 @@ export function SpinPickSheet() {
             </div>
 
             <ul className="flex flex-col gap-2">
-              {eligible.map(({ player, fit }) => (
+              {eligible.map((player) => (
                 <li key={player.id}>
                   <button
                     type="button"
-                    onClick={() => pickPlayer(player)}
+                    onClick={() => selectPlayer(player)}
                     className="flex w-full items-center justify-between rounded-xl bg-ink-soft px-4 py-3 text-left text-chalk transition hover:bg-white/10"
                   >
                     <span className="flex flex-col">
                       <span className="font-semibold">{player.name}</span>
-                      <span className="text-xs text-mist">{fit < 1 ? 'Stretch fit' : slot.label}</span>
+                      <span className="text-xs text-mist">{POSITION_LABEL[player.positions[0]]}</span>
                     </span>
                     <span className="font-display text-2xl">{player.overall}</span>
                   </button>
@@ -115,7 +117,7 @@ export function SpinPickSheet() {
 
             {eligible.length === 0 && (
               <p className="py-10 text-center text-sm text-mist">
-                No eligible players left in this squad for {slot.label}. Try spinning again.
+                No one in this squad fits your open slots. Try spinning again.
               </p>
             )}
           </>

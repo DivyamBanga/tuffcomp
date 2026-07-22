@@ -1,9 +1,9 @@
 # tuffcomp
 
-A drafting game for me and my friends. Tap a slot on a 4-3-3, spin, and you get a real World
-Cup team and year. Take one player from that squad for the slot, then spin again for the next
-one. Once your lineup is full, a scoring engine rates it to decide who built it best. Not just
-the biggest names, but the team that actually fits together.
+A drafting game for me and my friends. Spin and you get a real World Cup team and year. Take
+one player from that squad, place them anywhere on your 4-3-3 they can actually play, then spin
+again for the next pick. Once your lineup is full, a scoring engine rates it to decide who built
+it best. Not just the biggest names, but the team that actually fits together.
 
 Play it here: https://divyambanga.github.io/tuffcomp/
 
@@ -14,11 +14,12 @@ Play it here: https://divyambanga.github.io/tuffcomp/
 
 ## How it plays
 
-1. Tap an empty slot on the pitch.
-2. Spin. You get a real team and year, like France 2022.
-3. Pick one player from that squad who can actually play the slot you tapped. No putting a
-   defender up front.
-4. Spin again for the next slot. Repeat until all 11 are filled.
+1. Spin. You get a real team and year, like France 2022.
+2. Pick one player from that squad's roster. Only players who still have an open spot
+   somewhere in your lineup are offered, so no putting a defender up front.
+3. Place them. Every open slot they can legally play lights up on the pitch, tap one to put
+   them there.
+4. Spin again for the next pick. Repeat until all 11 are filled.
 5. The engine rates your team on quality, fit, nation chemistry, and balance, then shows who
    won and why.
 

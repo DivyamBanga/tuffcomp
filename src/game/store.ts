@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { loadSquads } from '../data/loadSquads'
 import { FORMATION_433 } from '../engine/formations'
+import { bestCompatibility } from '../engine/positions'
 import type { Player, Squad } from '../types'
 
 type SquadsStatus = 'loading' | 'ready' | 'error'
@@ -12,17 +13,22 @@ interface GameState {
   // The lineup being built: one real Player per slot, or null while empty.
   assignments: Record<string, Player | null>
 
-  // The slot currently being filled via spin, and the squad that spin has
-  // landed on (null while the spin animation is still running).
-  pendingSlotId: string | null
+  // Spin sheet: open while spinning or browsing a revealed roster.
+  // pendingSquad is null while the spin animation is still running.
+  spinOpen: boolean
   pendingSquad: Squad | null
 
+  // A player picked off a revealed roster, waiting to be placed on the pitch.
+  pendingPlayer: Player | null
+
   initSquads: () => Promise<void>
-  startSpinFor: (slotId: string) => void
-  revealForSlot: () => void
-  rerollPending: () => void
-  cancelPending: () => void
-  pickPlayer: (player: Player) => void
+  startSpin: () => void
+  revealSquad: () => void
+  rerollSquad: () => void
+  cancelSpin: () => void
+  selectPlayer: (player: Player) => void
+  cancelPlacement: () => void
+  placeInSlot: (slotId: string) => void
   clearSlot: (slotId: string) => void
   reset: () => void
 }
@@ -35,12 +41,20 @@ function randomSquad(squads: Squad[]): Squad {
   return squads[Math.floor(Math.random() * squads.length)]
 }
 
+// Is there any open slot on the pitch this player could actually be placed in?
+export function hasEligibleOpenSlot(player: Player, assignments: Record<string, Player | null>): boolean {
+  return FORMATION_433.slots.some(
+    (slot) => assignments[slot.id] === null && bestCompatibility(player.positions, slot.position) > 0,
+  )
+}
+
 export const useGameStore = create<GameState>((set, get) => ({
   squadsStatus: 'loading',
   allSquads: [],
   assignments: emptyAssignments(),
-  pendingSlotId: null,
+  spinOpen: false,
   pendingSquad: null,
+  pendingPlayer: null,
 
   initSquads: async () => {
     if (get().squadsStatus === 'ready') return
@@ -52,35 +66,40 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
   },
 
-  startSpinFor: (slotId) => set({ pendingSlotId: slotId, pendingSquad: null }),
+  startSpin: () => set({ spinOpen: true, pendingSquad: null }),
 
-  revealForSlot: () => {
+  revealSquad: () => {
     const { allSquads } = get()
     if (allSquads.length === 0) return
     set({ pendingSquad: randomSquad(allSquads) })
   },
 
-  rerollPending: () => {
-    const { allSquads, pendingSlotId } = get()
-    if (!pendingSlotId || allSquads.length === 0) return
+  rerollSquad: () => {
+    const { allSquads, spinOpen } = get()
+    if (!spinOpen || allSquads.length === 0) return
     set({ pendingSquad: randomSquad(allSquads) })
   },
 
-  cancelPending: () => set({ pendingSlotId: null, pendingSquad: null }),
+  cancelSpin: () => set({ spinOpen: false, pendingSquad: null }),
 
-  pickPlayer: (player) => {
-    const { pendingSlotId, assignments } = get()
-    if (!pendingSlotId) return
+  selectPlayer: (player) => set({ spinOpen: false, pendingSquad: null, pendingPlayer: player }),
+
+  cancelPlacement: () => set({ pendingPlayer: null }),
+
+  placeInSlot: (slotId) => {
+    const { pendingPlayer, assignments } = get()
+    if (!pendingPlayer) return
     const next = { ...assignments }
     // a player can only occupy one slot at a time
     for (const key of Object.keys(next)) {
-      if (next[key]?.id === player.id) next[key] = null
+      if (next[key]?.id === pendingPlayer.id) next[key] = null
     }
-    next[pendingSlotId] = player
-    set({ assignments: next, pendingSlotId: null, pendingSquad: null })
+    next[slotId] = pendingPlayer
+    set({ assignments: next, pendingPlayer: null })
   },
 
   clearSlot: (slotId) => set((state) => ({ assignments: { ...state.assignments, [slotId]: null } })),
 
-  reset: () => set({ assignments: emptyAssignments(), pendingSlotId: null, pendingSquad: null }),
+  reset: () =>
+    set({ assignments: emptyAssignments(), spinOpen: false, pendingSquad: null, pendingPlayer: null }),
 }))
