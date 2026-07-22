@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest'
-import { FORMATIONS } from '../engine/formations'
+import { beforeAll, describe, expect, it } from 'vitest'
+import { FORMATION_433, FORMATIONS } from '../engine/formations'
 import type { Player, Position, Squad } from '../types'
-import { SQUADS } from './loadSquads'
+import { loadSquads } from './loadSquads'
 import { canFillFormation, validateSquad } from './validateSquad'
 
 function makePlayer(id: string, positions: Position[]): Player {
@@ -9,8 +9,6 @@ function makePlayer(id: string, positions: Position[]): Player {
     id,
     name: id,
     nation: 'Test',
-    club: 'Test',
-    league: 'Test',
     year: 2000,
     overall: 70,
     positions,
@@ -18,58 +16,53 @@ function makePlayer(id: string, positions: Position[]): Player {
   }
 }
 
-describe('curated squads', () => {
-  it('loads at least 8 squads', () => {
-    expect(SQUADS.length).toBeGreaterThanOrEqual(8)
+describe('real World Cup squad dataset', () => {
+  let squads: Squad[] = []
+
+  beforeAll(async () => {
+    squads = await loadSquads()
+  })
+
+  it('loads a large real dataset', () => {
+    expect(squads.length).toBeGreaterThan(100)
   })
 
   it('every squad has a unique id', () => {
-    const ids = SQUADS.map((s) => s.id)
+    const ids = squads.map((s) => s.id)
     expect(new Set(ids).size).toBe(ids.length)
   })
 
   it('every player id is globally unique', () => {
-    const ids = SQUADS.flatMap((s) => s.players.map((p) => p.id))
+    const ids = squads.flatMap((s) => s.players.map((p) => p.id))
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  for (const squad of SQUADS) {
-    for (const formation of FORMATIONS) {
-      it(`${squad.id} can fill ${formation.id}`, () => {
-        expect(canFillFormation(squad, formation)).toBe(true)
-      })
-    }
-  }
+  it('every squad can fill the 4-3-3 formation', () => {
+    const failures = squads.filter((s) => !canFillFormation(s, FORMATION_433)).map((s) => s.id)
+    expect(failures).toEqual([])
+  })
 
-  it('flags a squad missing a goalkeeper as unable to fill any formation', () => {
+  it('flags a squad missing a goalkeeper as unable to fill the formation', () => {
     const broken = {
-      ...SQUADS[0],
-      players: SQUADS[0].players.filter((p) => !p.positions.includes('GK')),
+      ...squads[0],
+      players: squads[0].players.filter((p) => !p.positions.includes('GK')),
     }
     const errors = validateSquad(broken, FORMATIONS)
     expect(errors.length).toBe(FORMATIONS.length)
   })
 
-  it('cannot fill either formation when no player can cover an attacking slot', () => {
-    const noAttackers: Squad = {
-      id: 'test-no-attack',
+  it('cannot fill forward slots from a squad with no midfielders or forwards', () => {
+    const defenseOnly: Squad = {
+      id: 'test-defense-only',
       team: 'Test',
       year: 2000,
       kind: 'nation',
       players: [
         makePlayer('gk', ['GK']),
-        makePlayer('cb1', ['CB']),
-        makePlayer('cb2', ['CB']),
-        makePlayer('lb', ['LB']),
-        makePlayer('rb', ['RB']),
-        makePlayer('cdm', ['CDM']),
-        makePlayer('cm1', ['CM']),
-        makePlayer('cm2', ['CM']),
-        makePlayer('cm3', ['CM']),
+        ...Array.from({ length: 8 }, (_, i) => makePlayer(`def${i}`, ['DEF'])),
       ],
     }
-    for (const formation of FORMATIONS) {
-      expect(canFillFormation(noAttackers, formation)).toBe(false)
-    }
+    // Defenders can stretch into midfield, but defense and attack never connect directly.
+    expect(canFillFormation(defenseOnly, FORMATION_433)).toBe(false)
   })
 })

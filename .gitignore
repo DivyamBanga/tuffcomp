@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Raw source CSVs for scripts/generate-squads.mjs - large, regenerable, see script header for sources
+scripts/raw-data/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

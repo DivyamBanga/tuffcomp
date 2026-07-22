@@ -1,16 +1,4 @@
-export type Position =
-  | 'GK'
-  | 'CB'
-  | 'LB'
-  | 'RB'
-  | 'CDM'
-  | 'CM'
-  | 'CAM'
-  | 'LM'
-  | 'RM'
-  | 'LW'
-  | 'RW'
-  | 'ST'
+export type Position = 'GK' | 'DEF' | 'MID' | 'FWD'
 
 export interface Attributes {
   pace: number
@@ -25,8 +13,6 @@ export interface Player {
   id: string
   name: string
   nation: string
-  club: string
-  league: string
   year: number
   overall: number
   positions: Position[]

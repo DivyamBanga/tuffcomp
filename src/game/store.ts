@@ -1,64 +1,86 @@
 import { create } from 'zustand'
-import { SQUADS } from '../data/loadSquads'
-import { FORMATIONS, type Formation } from '../engine/formations'
-import type { Squad } from '../types'
+import { loadSquads } from '../data/loadSquads'
+import { FORMATION_433 } from '../engine/formations'
+import type { Player, Squad } from '../types'
 
-type Phase = 'spin' | 'reveal' | 'build'
+type SquadsStatus = 'loading' | 'ready' | 'error'
 
 interface GameState {
-  phase: Phase
-  squad: Squad | null
-  formationId: string
-  assignments: Record<string, string | null>
+  squadsStatus: SquadsStatus
+  allSquads: Squad[]
 
-  spinSquad: () => void
-  confirmReveal: () => void
-  setFormation: (formationId: string) => void
-  assignPlayer: (slotId: string, playerId: string) => void
+  // The lineup being built: one real Player per slot, or null while empty.
+  assignments: Record<string, Player | null>
+
+  // The slot currently being filled via spin, and the squad that spin has
+  // landed on (null while the spin animation is still running).
+  pendingSlotId: string | null
+  pendingSquad: Squad | null
+
+  initSquads: () => Promise<void>
+  startSpinFor: (slotId: string) => void
+  revealForSlot: () => void
+  rerollPending: () => void
+  cancelPending: () => void
+  pickPlayer: (player: Player) => void
   clearSlot: (slotId: string) => void
   reset: () => void
 }
 
-function emptyAssignments(formation: Formation): Record<string, string | null> {
-  return Object.fromEntries(formation.slots.map((s) => [s.id, null]))
+function emptyAssignments(): Record<string, Player | null> {
+  return Object.fromEntries(FORMATION_433.slots.map((s) => [s.id, null]))
+}
+
+function randomSquad(squads: Squad[]): Squad {
+  return squads[Math.floor(Math.random() * squads.length)]
 }
 
 export const useGameStore = create<GameState>((set, get) => ({
-  phase: 'spin',
-  squad: null,
-  formationId: FORMATIONS[0].id,
-  assignments: {},
+  squadsStatus: 'loading',
+  allSquads: [],
+  assignments: emptyAssignments(),
+  pendingSlotId: null,
+  pendingSquad: null,
 
-  spinSquad: () => {
-    const squad = SQUADS[Math.floor(Math.random() * SQUADS.length)]
-    const formation = FORMATIONS.find((f) => f.id === get().formationId) ?? FORMATIONS[0]
-    set({ squad, assignments: emptyAssignments(formation), phase: 'reveal' })
+  initSquads: async () => {
+    if (get().squadsStatus === 'ready') return
+    try {
+      const squads = await loadSquads()
+      set({ allSquads: squads, squadsStatus: 'ready' })
+    } catch {
+      set({ squadsStatus: 'error' })
+    }
   },
 
-  confirmReveal: () => set({ phase: 'build' }),
+  startSpinFor: (slotId) => set({ pendingSlotId: slotId, pendingSquad: null }),
 
-  setFormation: (formationId) => {
-    const formation = FORMATIONS.find((f) => f.id === formationId)
-    if (!formation) return
-    set({ formationId, assignments: emptyAssignments(formation) })
+  revealForSlot: () => {
+    const { allSquads } = get()
+    if (allSquads.length === 0) return
+    set({ pendingSquad: randomSquad(allSquads) })
   },
 
-  assignPlayer: (slotId, playerId) => {
-    set((state) => {
-      const assignments = { ...state.assignments }
-      // a player can only occupy one slot at a time
-      for (const key of Object.keys(assignments)) {
-        if (assignments[key] === playerId) assignments[key] = null
-      }
-      assignments[slotId] = playerId
-      return { assignments }
-    })
+  rerollPending: () => {
+    const { allSquads, pendingSlotId } = get()
+    if (!pendingSlotId || allSquads.length === 0) return
+    set({ pendingSquad: randomSquad(allSquads) })
   },
 
-  clearSlot: (slotId) => {
-    set((state) => ({ assignments: { ...state.assignments, [slotId]: null } }))
+  cancelPending: () => set({ pendingSlotId: null, pendingSquad: null }),
+
+  pickPlayer: (player) => {
+    const { pendingSlotId, assignments } = get()
+    if (!pendingSlotId) return
+    const next = { ...assignments }
+    // a player can only occupy one slot at a time
+    for (const key of Object.keys(next)) {
+      if (next[key]?.id === player.id) next[key] = null
+    }
+    next[pendingSlotId] = player
+    set({ assignments: next, pendingSlotId: null, pendingSquad: null })
   },
 
-  reset: () =>
-    set({ phase: 'spin', squad: null, formationId: FORMATIONS[0].id, assignments: {} }),
+  clearSlot: (slotId) => set((state) => ({ assignments: { ...state.assignments, [slotId]: null } })),
+
+  reset: () => set({ assignments: emptyAssignments(), pendingSlotId: null, pendingSquad: null }),
 }))

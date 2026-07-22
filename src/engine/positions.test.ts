@@ -3,7 +3,6 @@ import {
   ILLEGAL,
   NATURAL,
   POSITIONS,
-  SECONDARY,
   STRETCH,
   bestCompatibility,
   canPlaySlot,
@@ -31,45 +30,38 @@ describe('positionCompatibility', () => {
     }
   })
 
-  it('lets a center back cover full back as secondary and CDM as a stretch, never attack', () => {
-    expect(positionCompatibility('CB', 'LB')).toBe(SECONDARY)
-    expect(positionCompatibility('CB', 'RB')).toBe(SECONDARY)
-    expect(positionCompatibility('CB', 'CDM')).toBe(STRETCH)
-    expect(positionCompatibility('CB', 'ST')).toBe(ILLEGAL)
-    expect(positionCompatibility('CB', 'CAM')).toBe(ILLEGAL)
-    expect(positionCompatibility('CB', 'LW')).toBe(ILLEGAL)
-    expect(positionCompatibility('CB', 'RW')).toBe(ILLEGAL)
+  it('lets a defender stretch into midfield but never forward', () => {
+    expect(positionCompatibility('DEF', 'MID')).toBe(STRETCH)
+    expect(positionCompatibility('DEF', 'FWD')).toBe(ILLEGAL)
   })
 
-  it('lets a winger cover the opposite wing naturally, CAM as secondary, striker as a stretch, never defense', () => {
-    expect(positionCompatibility('LW', 'RW')).toBe(NATURAL)
-    expect(positionCompatibility('RW', 'LW')).toBe(NATURAL)
-    expect(positionCompatibility('LW', 'CAM')).toBe(SECONDARY)
-    expect(positionCompatibility('LW', 'ST')).toBe(STRETCH)
-    expect(positionCompatibility('LW', 'CB')).toBe(ILLEGAL)
-    expect(positionCompatibility('LW', 'LB')).toBe(ILLEGAL)
+  it('lets a forward stretch into midfield but never defense', () => {
+    expect(positionCompatibility('FWD', 'MID')).toBe(STRETCH)
+    expect(positionCompatibility('FWD', 'DEF')).toBe(ILLEGAL)
   })
 
-  it('lets a striker cover a wing as secondary and CAM as a stretch, never defense', () => {
-    expect(positionCompatibility('ST', 'LW')).toBe(SECONDARY)
-    expect(positionCompatibility('ST', 'RW')).toBe(SECONDARY)
-    expect(positionCompatibility('ST', 'CAM')).toBe(STRETCH)
-    expect(positionCompatibility('ST', 'CB')).toBe(ILLEGAL)
-    expect(positionCompatibility('ST', 'CDM')).toBe(ILLEGAL)
+  it('lets a midfielder stretch into defense or attack', () => {
+    expect(positionCompatibility('MID', 'DEF')).toBe(STRETCH)
+    expect(positionCompatibility('MID', 'FWD')).toBe(STRETCH)
+  })
+
+  it('never lets a defender and forward swap directly', () => {
+    expect(positionCompatibility('DEF', 'FWD')).toBe(ILLEGAL)
+    expect(positionCompatibility('FWD', 'DEF')).toBe(ILLEGAL)
   })
 })
 
 describe('bestCompatibility', () => {
   it('takes the best score across a player listed with multiple positions', () => {
-    expect(bestCompatibility(['ST', 'LW'], 'RW')).toBe(NATURAL)
-    expect(bestCompatibility(['CB'], 'ST')).toBe(ILLEGAL)
+    expect(bestCompatibility(['DEF', 'MID'], 'MID')).toBe(NATURAL)
+    expect(bestCompatibility(['DEF'], 'FWD')).toBe(ILLEGAL)
   })
 })
 
 describe('canPlaySlot', () => {
   it('is false only when every listed position is illegal for the slot', () => {
-    expect(canPlaySlot(['CB'], 'LB')).toBe(true)
-    expect(canPlaySlot(['CB'], 'ST')).toBe(false)
-    expect(canPlaySlot(['CB', 'ST'], 'ST')).toBe(true)
+    expect(canPlaySlot(['DEF'], 'MID')).toBe(true)
+    expect(canPlaySlot(['DEF'], 'FWD')).toBe(false)
+    expect(canPlaySlot(['DEF', 'FWD'], 'FWD')).toBe(true)
   })
 })

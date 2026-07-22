@@ -4,7 +4,7 @@ A drafting game where you and your friends build sports teams from real players,
 analysis engine rates every team on quality, positional fit, chemistry, and balance to
 decide who built the best squad.
 
-Status: planning complete, ready to build.
+Status: Phase 0-2 built (foundation, data, build screen). Rating engine (Phase 3) not yet built.
 Owner: Divyam.
 Last updated: 2026-07-22.
 
@@ -12,12 +12,14 @@ Last updated: 2026-07-22.
 
 ## 1. Vision
 
-Load into a lobby, get a random real team and year (like France 2022), and build the best
-possible starting lineup from that squad by placing real players onto positions they can
-actually play. When everyone is done, a scoring engine analyzes each team on more than raw
-talent. It looks at how well players fit their positions, how much chemistry the squad has,
-and whether the team is balanced or is missing a key job. The best-built team wins, fairly
-and transparently.
+Tap an empty slot in a 4-3-3 and spin. You get one real World Cup team and year (like France
+2022) - take one player from that squad's real roster for the slot you tapped, then spin again
+for the next slot. Repeat until your XI is full. Every spin is a fresh random Team-Year, so
+your finished lineup is a mix of players pulled from different real squads across World Cup
+history. Once everyone is done, a scoring engine analyzes each team on more than raw talent. It
+looks at how well players fit their positions, how much nation chemistry the squad has, and
+whether the team is balanced or is missing a key job. The best-built team wins, fairly and
+transparently.
 
 Two sports, four modes total. We ship one fully working mode first, then reuse the same
 engine and screens for the rest.
@@ -74,15 +76,20 @@ balance.
 ## 3. Core concepts and terminology
 
 - Squad / Team-Year card: a real team from a specific year (France 2022), containing that
-  team's real players. This is the pool you draft from.
-- Player: a real athlete with an overall rating, a set of playable positions, a small set of
-  attributes, and metadata (nation, club, league, year).
-- Formation: the shape of the lineup and its position slots (4-3-3, 4-4-2 for soccer).
+  team's real players. Each spin reveals one of these; you take exactly one player from it.
+- Player: a real athlete with an overall rating, a broad position (GK, DEF, MID, or FWD), and a
+  small set of attributes. See section 7 for why positions are broad rather than granular.
+- Formation: the shape of the lineup and its slots. Only 4-3-3 is supported - see section 4.1.
 - Slot: a single position on the pitch that holds one player (for example the left back slot).
+  Each slot has a cosmetic label (LB, CB, CDM, ST, ...) for how it's drawn on the pitch, but its
+  eligibility is decided by its broad position (DEF, MID, ...).
+- Spin: the action of tapping an empty slot, which reveals a random Team-Year and lets you pick
+  one eligible player from it for that slot.
 - Lineup / XI: the full set of filled slots that make up a built team.
-- Rating: the engine's 0 to 100 score for a built team, with a visible breakdown.
-- Position compatibility: how well a player can play a given slot, from natural to illegal.
-- Chemistry: bonus from links between players (shared nation, league, club).
+- Rating: the engine's 0 to 100 score for a built team, with a visible breakdown. Not yet built
+  (Phase 3).
+- Position compatibility: how well a player can play a given slot: natural, stretch, or illegal.
+- Chemistry: bonus from players sharing a nation. See section 5.2 for why it's nation-only.
 - Balance: how well the team covers every key job without gaps or redundancy.
 
 ---
@@ -91,26 +98,32 @@ balance.
 
 ### 4.1 Soccer World Cup (MVP, build first)
 
-Flow:
-1. Spin. The game reveals a random Team-Year card (for example France 2022).
-2. Build. You place that squad's real players into a formation. The UI only offers players
-   who can legally play the selected slot, so you can never put an attacker in defense.
-3. Rate. The engine scores your XI and shows the breakdown.
+The lineup is always a 4-3-3: GK, LB, CB, CB, RB, CDM, CM, CM, LW, ST, RW - 11 slots. This is
+the only formation the game supports (see the "one formation" decision in section 7.1 - it's a
+direct consequence of how the real position data is shaped, and it also just keeps the game
+easier to pick up).
 
-Two sub-modes for playing with friends:
+Flow, repeated once per slot:
+1. Tap an empty slot on the pitch.
+2. Spin. The game reveals a random Team-Year card (for example France 2022) from the full pool
+   of real World Cup squads (see section 7).
+3. Pick. You see that squad's real roster, filtered to players eligible for the slot you
+   tapped (illegal positions are never offered, so you can never put a defender at forward).
+   Take one player, or spin again if you don't like this squad.
+4. Repeat for the next empty slot. Every spin is independent and fully random, so your XI ends
+   up built from players pulled out of many different real squads and years.
+5. Rate. Once all 11 slots are filled, the engine scores your XI and shows the breakdown. Not
+   yet built - this is Phase 3.
 
-- Same-pool (build first): everyone gets the same spun squad and independently builds their
-  best XI from the same players. Because everyone has identical resources, the winner is
-  purely whoever built the smartest lineup. This is the fairest and simplest to build, so it
-  is the MVP.
-- Snake draft (build second): players are exclusive. To make an XI-sized draft work, the game
-  spins several Team-Year cards into one combined pool. Draft order snakes (1, 2, 3, then 3,
-  2, 1). Mixing nations gives you better raw players but lowers chemistry, so there is a real
-  strategic tradeoff. This is where chemistry becomes a core lever.
+This single mechanic is the whole game for now - solo, chasing your best rating. It replaces an
+earlier plan that had you build freely from one whole spun squad, with a separate "snake draft"
+mode for mixing squads. Real player-position data at the scale we draw from can't support that
+distinction cleanly (see section 7), and pulling one player per spin turned out to be a cleaner,
+more game-like loop anyway - it's genuinely closer to how the Roblox reference game works (you
+roll cards repeatedly, not once).
 
-Single-player loop (before any friends are involved): spin, build your best XI, get a rating,
-and try to beat your personal best. This is the 82-0 style chase-the-perfect-team loop and is
-genuinely fun solo.
+Multiplayer (later, section 10) reuses this exact mechanic: players take turns being the one who
+taps a slot and spins, in a natural snake order. No separate multiplayer-only mode is needed.
 
 ### 4.2 Soccer Clubs (later)
 
@@ -142,8 +155,8 @@ the core rating (randomness only appears in the optional head-to-head simulation
 ### 5.1 Inputs
 
 A built team is a list of filled slots. Each filled slot has:
-- the slot's position (for example LB)
-- the player placed there (overall, attributes, playable positions, nation, club, league, year)
+- the slot's cosmetic label and its broad position (for example LB, position DEF)
+- the player placed there (overall, attributes, position, nation, year)
 - the formation context (which slots are adjacent, used for spine cohesion)
 
 ### 5.2 The four components
@@ -170,11 +183,13 @@ Q rewards using the best players and spending your best talent on the most impor
 Two parts, averaged per slot then averaged across the XI.
 
 1. Position compatibility. How naturally the player plays this slot, from a compatibility
-   matrix (section 5.3). Natural = 1.0, secondary = 0.75, stretch = 0.5, illegal = 0. Illegal
-   placements are blocked in the UI, so in practice the floor is the stretch value.
-2. Attribute alignment. Does the player's attribute profile suit the slot? Each slot has a
-   small profile of which attributes matter (a full back wants pace and defending, a striker
-   wants shooting and pace). A fast defender fits a full back slot better than a slow one.
+   matrix (section 5.3). Natural = 1.0, stretch = 0.5, illegal = 0. Illegal placements are
+   blocked in the UI, so in practice the floor is the stretch value.
+2. Attribute alignment. Does the player's attribute profile suit the slot's cosmetic role? Even
+   though eligibility only checks the broad position, the slot's label still carries a profile
+   of which attributes matter (an LB slot wants pace and defending, an ST slot wants shooting
+   and pace) so a fast defender still fits a full back slot better than a slow one, even though
+   both are just "DEF" for eligibility purposes.
 
 ```
 slotFit = 0.6 * positionCompatibility + 0.4 * attributeAlignment
@@ -185,19 +200,24 @@ F rewards putting players where they belong and punishes forcing players out of 
 
 #### Component C - Chemistry (links between players)
 
-FIFA-style link chemistry, capped so it cannot dominate. Each player earns chemistry points
-from squad-mates who share their nation, league, or club, plus a spine cohesion bonus when
-adjacent players in the formation share links.
+Nation-only, unlike the original plan's nation/league/club blend. The real data we draw from
+(section 7) doesn't include club career history at the scale we need, so nation is the only
+link we can honestly compute. This isn't a downgrade in practice: because every slot is filled
+by an independent spin across the entire pool, nation chemistry is the central strategic
+tension of the whole game. Every spin gives you a different random nation, so you're constantly
+choosing between the best available player and building toward a chemistry bonus with players
+you've already placed.
 
 ```
-for each player: chemPoints = clamp( f(sameNation, sameLeague, sameClub) , 0, maxPerPlayer )
+for each player: chemPoints = clamp( f(count of other players sharing their nation) , 0, maxPerPlayer )
 C = ( sum of chemPoints / (maxPerPlayer * 11) ) * 100
-plus a small spine cohesion bonus for connected GK-CB-CM-ST links
+plus a small spine cohesion bonus when adjacent slots (GK-CB-CM-ST) share a nation
 ```
 
-In single-squad World Cup mode everyone is the same nationality, so chemistry is naturally
-high and roughly equal, which keeps that mode fair. In snake draft and Clubs modes, chemistry
-becomes the key tradeoff against raw quality.
+FIFA Ultimate Team's chemistry model was multi-link (nation, league, club); ours is intentionally
+simpler because it's what the real data actually supports without fabricating career histories
+we don't have. If a future data source gives us real club history, club chemistry can be added
+without changing this formula's shape.
 
 #### Component B - Balance (role coverage, anti-redundancy)
 
@@ -229,21 +249,22 @@ balanced team. It directly delivers "the best teams that fit best together overa
 
 ### 5.3 Position compatibility matrix
 
-Positions are grouped and given pairwise compatibility. This drives both the UI (illegal = the
-player is not offered for that slot) and the Fit score. Values are natural 1.0, secondary 0.75,
-stretch 0.5, illegal 0.
+Four broad positions, not the twelve granular ones (CB/LB/RB/CDM/CM/CAM/LM/RM/LW/RW/ST) originally
+planned - see section 7.1 for why. Values are natural 1.0, stretch 0.5, illegal 0.
 
-Groups: Goalkeeper (GK), Defenders (CB, LB, RB), Midfielders (CDM, CM, CAM, LM, RM),
-Forwards (LW, RW, ST).
+Positions: Goalkeeper (GK), Defender (DEF), Midfielder (MID), Forward (FWD).
 
-Rules of thumb encoded in the matrix:
+Rules encoded in the matrix (`engine/positions.ts`, unit tested):
 - GK only plays GK.
-- A CB can play FB as secondary and CDM as a stretch, but never a forward slot.
-- A winger can play the opposite wing naturally, CAM as secondary, ST as a stretch, but never
-  a defensive slot.
-- A striker can play winger as secondary and CAM as a stretch, but never defense or GK.
+- DEF and MID can stretch into each other.
+- MID and FWD can stretch into each other.
+- DEF and FWD never connect directly - a player has to be genuinely midfield-capable to bridge
+  defense and attack.
 
-The exact matrix lives in code as a single source of truth (`positions.ts`) and is unit tested.
+This is coarser than the original CB/LB/RB-level design, but it's what real, freely-available
+position data actually distinguishes at the scale of ~9,500 players across 400+ squads (section
+7). The pitch still draws a full 4-3-3 shape with real role labels (LB, CB, CDM, LW, ST, RW) -
+only the underlying eligibility check is broad.
 
 ### 5.4 Final rating
 
@@ -296,29 +317,53 @@ optional and can be turned off to fall back to pure rating comparison. Built in 
 
 ## 7. Data model and data plan
 
-### 7.1 Data comes from real, curated sources
+Phase 1 originally hand-curated 10 iconic squads (~180 players) by hand. That doesn't scale to
+"many teams, many years" - hand-authoring accurate rosters is slow and caps out around a few
+dozen squads before it becomes the bottleneck on everything else. Phase "3-redesign" replaced it
+with a real, automated data pipeline. This section describes what shipped.
 
-You chose real data, curated to start. We hand-build a limited but iconic set of squads with
-accurate players, positions, and ratings, then expand over time.
+### 7.1 Real sources, not hand-curated
 
-Note on ratings: official game overalls are proprietary. We store our own overall value per
-player, informed by public knowledge and stats, so the dataset is ours and free to use. The
-numbers are chosen to feel accurate without copying any single source.
+Two free, legally reusable datasets, merged by `scripts/generate-squads.mjs`:
+
+- **1970-2022 (14 men's World Cups):** the
+  [Fjelstul World Cup Database](https://github.com/jfjelstul/worldcup) (CC-BY-SA 4.0, Joshua C.
+  Fjelstul, Ph.D.). Real squads, real player names, and a broad position per player (goalkeeper /
+  defender / midfielder / forward), plus per-tournament appearances, goals, and awards we use as
+  rating signal (see 7.3).
+- **2026:** [mominullptr/FIFA-World-Cup-2026-Dataset](https://github.com/mominullptr/FIFA-World-Cup-2026-Dataset)
+  (CC0). Real squads for all 48 teams, with caps, career goals, and market value as rating
+  signal.
+
+The decision to go with these sources over continued hand-curation directly shaped two other
+design choices:
+
+- **Positions are broad (GK/DEF/MID/FWD), not granular (CB/LB/RB/...).** Neither source
+  distinguishes further than that. We chose broad positions over hand-patching thousands of
+  players' exact sides and roles ourselves, which would have reintroduced the scaling problem
+  we were trying to solve. See section 5.3.
+- **No club or league field on Player.** Neither source tracks club career at this scale. We
+  chose to drop the fields rather than fabricate plausible-looking but fake club history. This
+  is why Component C (Chemistry, section 5.2) is nation-only for now.
+
+Neither source has skill ratings - nobody's is free to redistribute at this scale, and section
+7.3 was already true before this redesign: our overalls are our own values, not copied from any
+official source. What changed is that they're now generated algorithmically from real signal
+(goals, appearances, awards, caps, market value) rather than hand-tuned per player, because
+hand-tuning ~9,500 players isn't possible.
 
 ### 7.2 TypeScript types (single source of truth)
 
 ```
-type Position = 'GK'|'CB'|'LB'|'RB'|'CDM'|'CM'|'CAM'|'LM'|'RM'|'LW'|'RW'|'ST'
+type Position = 'GK'|'DEF'|'MID'|'FWD'
 
 interface Player {
   id: string
   name: string
   nation: string
-  club: string
-  league: string
   year: number
-  overall: number            // 0..99
-  positions: Position[]       // first entry is primary
+  overall: number            // 0..99, algorithmically derived, see 7.3
+  positions: Position[]       // currently always one entry - the source data is single-position
   attributes: {               // 0..99 each
     pace: number
     shooting: number
@@ -330,22 +375,65 @@ interface Player {
 }
 
 interface Squad {
-  id: string                  // 'france-2022'
+  id: string                  // 'fra-2022'
   team: string                // 'France'
   year: number                // 2022
-  kind: 'nation'|'club'
-  players: Player[]           // ~18-26 players
+  kind: 'nation'|'club'       // always 'nation' until Clubs mode (section 4.2) exists
+  players: Player[]
 }
 ```
 
-### 7.3 MVP squad set (curated, roughly 8 to 12 to start)
+### 7.3 How ratings are derived
 
-Chosen for iconic value and positional depth so each can fill a full XI:
-France 2022, Brazil 2002, Argentina 2022, Spain 2010, Brazil 1970, Germany 2014,
-Italy 2006, Netherlands 2010, England 2018, Portugal 2016. Final list confirmed during Phase 1.
+No hand-tuning at this scale - every overall and attribute set is computed from real signal.
 
-Each squad must contain enough players per position group to fill the supported formations.
-A validation script checks this so no squad can produce an unfillable lineup.
+For 1970-2022, per player per tournament:
+```
+overall = clamp(round(
+  60
+  + min(appearances, 7) * 2       // up to +14 for playing every match
+  + min(starts, 7) * 1.5          // up to +10.5 for being a starter
+  + min(goals, 8) * 2.5           // up to +20 for a huge scoring tournament
+  + (wonMajorAward ? 10 : wonAnyAward ? 5 : 0)
+  + deterministicJitter(-3..3)
+), 50, 99)
+```
+
+For 2026, per player (career-wide caps/goals plus current market value as a quality proxy):
+```
+overall = clamp(round(
+  58 + marketValueComponent(0..26) + min(caps, 100) * 0.09 + min(goals, 60) * 0.12 + deterministicJitter(-3..3)
+), 50, 99)
+```
+
+The jitter is a hash of the player's id, not `Math.random()` - reruns of the generation script
+always produce identical output, so the dataset is reproducible.
+
+Attributes (pace, shooting, passing, dribbling, defending, physical) come from a per-position
+archetype offset from `overall` (a forward skews toward shooting and pace, a defender toward
+defending and physical), plus a small deterministic per-attribute jitter so players aren't
+carbon copies of their position's template.
+
+Known, accepted limitation: a rating reflects how much a player actually did **at that specific
+tournament** (or, for 2026, their current profile), not lifetime reputation. A legend who got
+injured before playing a match - Karim Benzema at the 2022 World Cup, for example - rates low on
+that specific card. This is honest given what the data can tell us, not a bug.
+
+### 7.4 Scale and regenerating the data
+
+413 squads, ~9,500 players, spanning 1970-2026. `src/data/squads.json` (~2MB, lazy-loaded via
+dynamic import so it doesn't bloat the app's main bundle) is the committed, derived artifact.
+The raw source CSVs are not committed (`scripts/raw-data/`, gitignored - large and regenerable).
+
+To regenerate from scratch:
+```
+npm run data:fetch      # downloads the raw CSVs from both sources
+npm run data:generate   # transforms them into src/data/squads.json
+```
+
+Every generated squad is checked against the 4-3-3's position requirements (canFillFormation,
+section 5.3) before being included; a squad that can't field a full legal XI is dropped rather
+than shipped broken. 3 squads were dropped out of 416 candidates in the current dataset.
 
 ---
 
@@ -354,27 +442,33 @@ A validation script checks this so no squad can produce an unfillable lineup.
 All free, web-first, with a clean upgrade path to online multiplayer.
 
 - Language: TypeScript
-- Framework: React 18 with Vite
-- Styling: Tailwind CSS, with a small set of custom components for the pitch and cards
+- Framework: React 19 with Vite
+- Styling: Tailwind CSS v4 (CSS-first `@theme` config, no tailwind.config.js)
 - State: Zustand (lightweight, minimal boilerplate)
-- Animation: Framer Motion for the spin reveal and transitions
+- Animation: Motion (the current name for what was Framer Motion) for the spin flicker and reveal
 - Rating engine: a standalone pure TypeScript module with no UI or framework dependencies, so
   it is fully unit testable and reusable across every mode
-- Data: static JSON in the repo, validated against the TypeScript types
+- Data: a static, generated JSON file (`src/data/squads.json`, ~2MB), lazy-loaded via dynamic
+  import so it's a separate bundle chunk from app code. See section 7.4 for the generation
+  pipeline (`scripts/generate-squads.mjs`, `scripts/fetch-raw-data.mjs`, `csv-parse` as a
+  dev-only dependency - none of this ships to the client).
 - Testing: Vitest for the engine and data validation
-- Persistence (single player): localStorage for best scores and history
-- Hosting: Vercel or GitHub Pages, both free for static Vite builds
+- Persistence (single player): localStorage for best scores and history (Phase 4, not yet built)
+- Hosting: GitHub Pages via GitHub Actions (builds, tests, and deploys on every push to main)
 - Online multiplayer (later): Supabase free tier for realtime rooms and light persistence
 
-Suggested project structure:
+Project structure:
 
 ```
 src/
-  engine/        rating, chemistry, balance, positions, simulation, tests
-  data/          squads json, loaders, validation
-  game/          game state (zustand), modes, draft logic
-  ui/            screens and components (spin, pitch, player picker, results)
+  engine/        rating (not yet built), positions, formations, tests
+  data/          squads.json (generated), loader, validation
+  game/          game state (zustand)
+  ui/            screens and components (pitch, spin/pick sheet)
   types/         shared TypeScript types
+scripts/
+  fetch-raw-data.mjs     downloads the raw CSVs (gitignored output)
+  generate-squads.mjs    transforms them into src/data/squads.json
 ```
 
 The engine folder has zero imports from ui or game, keeping the algorithm isolated and testable.
@@ -386,15 +480,20 @@ The engine folder has zero imports from ui or game, keeping the algorithm isolat
 Design principles: clean, uncluttered, fast, and mobile friendly since friends will play on
 phones. It should read as a polished, finished game, not a prototype.
 
-Key screens:
-- Home: pick sport and mode, start solo or start a local (hotseat) game.
-- Spin reveal: an animated reveal of the Team-Year card with crest, colors, and year.
-- Build (the pitch): the formation drawn on a pitch, tappable slots, a bottom sheet player
-  picker that only shows legally eligible players for the selected slot, each with overall,
-  positions, and key attributes. A live provisional rating updates as you build.
-- Results: final rating with the four-component breakdown, the generated summary, and, in
-  multiplayer, a ranked leaderboard of all players' teams with a 1v1 head-to-head option.
-- Best score / history (solo): your personal best and past attempts.
+Key screens (current, as built):
+- Build (the pitch): a single always-visible 4-3-3 pitch with 11 tappable slots and a fill
+  counter. There's no separate home/mode-picker screen yet - World Cup mode with a single
+  formation is the entire game so far.
+- Spin and pick sheet: tapping an empty slot opens this as a bottom sheet. It plays a brief
+  slot-machine flicker through squad names, lands on one real Team-Year, and shows that squad's
+  roster filtered to players eligible for the tapped slot. Pick one to fill the slot, or spin
+  again for a different squad. Tapping a filled slot clears it directly - no confirmation, since
+  refilling is one tap away.
+
+Planned, not yet built:
+- Results: final rating with the four-component breakdown and a generated summary (Phase 3).
+- Best score / history (solo): your personal best and past attempts (Phase 4).
+- A ranked leaderboard and 1v1 head-to-head option for multiplayer (Phase 5+).
 
 Interaction choice: tap-to-assign as the primary interaction because it works great on phones.
 Drag-and-drop can be added later as a nice-to-have on desktop.
@@ -403,16 +502,17 @@ Drag-and-drop can be added later as a nice-to-have on desktop.
 
 ## 10. Multiplayer plan
 
-Built in stages so the game is fully playable with friends well before online exists.
+Built in stages so the game is fully playable with friends well before online exists. Because
+the core loop is already "tap a slot, spin, pick" per player turn, multiplayer doesn't need a
+separate mode - it's the same mechanic with players taking turns.
 
 1. Solo (Phase 4): one player chasing a best rating.
-2. Hotseat (Phase 5): 2 to 8 players on one device, same-pool or snake draft, results and
-   rankings, optional 1v1 head-to-head sim. This already lets you and your friends play in
-   person.
+2. Hotseat (Phase 5): 2 to 8 players on one device, taking turns spinning and picking in a
+   snake order (1, 2, 3, then 3, 2, 1) until everyone's XI is full, then ranked results.
+   Optional 1v1 head-to-head sim. This already lets you and your friends play in person.
 3. Online rooms (Phase 8): one player creates a room and gets a short code, friends join by
-   code, draft state syncs in realtime, turn order is enforced. Built on Supabase free tier
-   with anonymous or lightweight auth. This is where "add your friends somehow" is fully
-   realized.
+   code, turn order and spins sync in realtime. Built on Supabase free tier with anonymous or
+   lightweight auth. This is where "add your friends somehow" is fully realized.
 
 ---
 
@@ -431,23 +531,27 @@ Built in stages so the game is fully playable with friends well before online ex
 Each task states how to verify it is done. We commit after each meaningful task or at least at
 the end of each phase, per your request for commits throughout development.
 
-### Phase 0 - Foundation
+### Phase 0 - Foundation (done)
 - Scaffold Vite + React + TypeScript + Tailwind. Verify: dev server runs and shows a placeholder.
 - Set up Zustand, Vitest, and the folder structure. Verify: a sample test passes.
-- Deploy the empty skeleton to Vercel or Pages. Verify: a live public URL loads.
+- Deploy the empty skeleton to GitHub Pages via GitHub Actions. Verify: a live public URL loads.
 
-### Phase 1 - Data and positions
-- Define the TypeScript types and the position compatibility matrix. Verify: matrix unit tests
-  pass (GK only plays GK, striker cannot play CB, and so on).
-- Curate the first 8 to 12 Team-Year squads as JSON. Verify: a validation script confirms every
-  squad can fill every supported formation.
+### Phase 1 - Data and positions (done, later superseded by the redesign below)
+- Defined the TypeScript types and a 12-position compatibility matrix (CB/LB/RB/CDM/CM/CAM/LM/
+  RM/LW/RW/ST). Hand-curated 10 Team-Year squads as JSON (~180 players).
+- This did not scale to "many teams, many years" - see the redesign directly below, which
+  replaced both the position system and the squad data with an automated pipeline.
 
-### Phase 2 - Build screen (single squad)
-- Formation model and selector (start with 4-3-3 and 4-4-2). Verify: switching formations
-  redraws slots correctly.
-- Spin reveal screen. Verify: it picks a random squad and animates the reveal.
-- Pitch and player picker. Verify: you can build a full legal XI, and illegal players are never
-  offered for a slot.
+### Phase 2 - Build screen (done, redesigned mid-phase)
+- First build: one whole spun squad, freely build an XI from it, formation selector (4-3-3 and
+  4-4-2). This matched the original PRD but not what actually felt good to build with.
+- Redesign, same phase: switched to the real mechanic that shipped - tap an empty slot, spin a
+  random real Team-Year, pick one eligible player from its roster for that slot, repeat. Formation
+  reduced to 4-3-3 only. Position system simplified to GK/DEF/MID/FWD (section 5.3), which is what
+  unlocked replacing the 10 hand-curated squads with a real, automatically generated dataset of
+  413 squads / ~9,500 players spanning 1970-2026 (section 7). Verify: you can fill all 11 slots
+  through repeated spin-and-pick, illegal players are never offered for a slot, and the full
+  dataset passes `canFillFormation` for every squad (Vitest, currently 15 passing tests).
 
 ### Phase 3 - Rating engine
 - Implement Q, F, C, B and the final blended rating as a pure module. Verify: unit tests for
@@ -462,14 +566,16 @@ the end of each phase, per your request for commits throughout development.
   session and confirm the best score persists across reloads.
 
 ### Phase 5 - Hotseat multiplayer
-- Local pass-and-play for 2 to 8 players, same-pool mode, with a ranked results screen. Verify:
-  run a 3-player game end to end and confirm rankings are correct.
+- Local pass-and-play for 2 to 8 players: players take turns spinning and picking in snake order
+  (1, 2, 3, then 3, 2, 1) until everyone's XI is full, then a ranked results screen. This folds in
+  what was originally planned as a separate Phase 6 "snake draft mode" - the single-player
+  mechanic already is a draft, so multiplayer is just turn-taking on top of it, not a new mode.
+  Verify: run a 3-player game end to end, confirm turn order is correct, no player can be picked
+  by two people, and rankings are correct.
 - Head-to-head simulation for 1v1. Verify: two teams produce a believable scoreline consistent
   with their ratings.
 
-### Phase 6 - Snake draft mode
-- Multi-squad combined pool, exclusive picks, snake order. Verify: order is 1-2-3-3-2-1, no
-  player is picked twice, and mixing nations visibly lowers chemistry.
+### Phase 6 - (merged into Phase 5, see above)
 
 ### Phase 7 - Polish and expand
 - More formations, more squads, spin and reveal animation polish, sound, mobile pass-and-play
@@ -505,19 +611,25 @@ the end of each phase, per your request for commits throughout development.
 ## 14. Open questions and future ideas
 
 - Exact starting weights and the balance-need list will be tuned during Phase 3 playtesting.
-- Whether snake draft should always mix multiple nations or sometimes draft within one squad
-  (decided at Phase 6 based on how the MVP feels).
+- The rating formula constants in section 7.3 (appearance/goal/award/market-value weights) were
+  picked from spot-checking a handful of known players, not a full audit - may need retuning
+  once more of the dataset gets played with.
+- Whether to add a second formation back once the core loop is proven fun (would need either
+  richer position data or a way to fake sub-positions within DEF/MID/FWD without misrepresenting
+  players).
+- Whether club chemistry ever comes back - would need a real club-history data source, since we
+  chose not to fabricate one (section 7.1).
 - Later additions once the core is fun: accounts and persistent stats, global leaderboards,
-  more formations, more sports, cosmetic team themes.
+  more sports, cosmetic team themes.
 
 ---
 
 ## 15. Glossary
 
-- OVR: a player's overall rating, 0 to 99.
-- Team-Year card: a real team from a specific year, the pool you draft from.
+- OVR: a player's overall rating, 0 to 99, algorithmically derived (section 7.3).
+- Team-Year card: a real team from a specific year, revealed by a spin.
+- Spin: tap an empty slot, get a random Team-Year, pick one eligible player from it.
 - XI: a full built soccer lineup of eleven players.
-- Same-pool: everyone builds from the identical spun squad.
-- Snake draft: exclusive picks in a 1-2-3-3-2-1 order across a combined pool.
-- Chemistry: bonus from shared nation, league, or club links.
+- Snake order: turn order in multiplayer, 1-2-3-3-2-1, so no one always picks last.
+- Chemistry: bonus from players sharing a nation (section 5.2).
 - Balance: how well a team covers every key job without gaps or redundancy.
