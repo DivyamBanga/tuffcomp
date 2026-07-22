@@ -1,11 +1,17 @@
+import { useGameStore } from './game/store'
+import { PitchScreen } from './ui/PitchScreen'
+import { RevealScreen } from './ui/RevealScreen'
+import { SpinScreen } from './ui/SpinScreen'
+
 function App() {
+  const phase = useGameStore((s) => s.phase)
+
   return (
-    <main className="flex min-h-screen items-center justify-center bg-neutral-950 text-neutral-50">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold tracking-tight">tuffcomp</h1>
-        <p className="mt-2 text-neutral-400">draft. build. get rated.</p>
-      </div>
-    </main>
+    <div className="grain min-h-screen bg-ink font-sans text-chalk">
+      {phase === 'spin' && <SpinScreen />}
+      {phase === 'reveal' && <RevealScreen />}
+      {phase === 'build' && <PitchScreen />}
+    </div>
   )
 }
 
