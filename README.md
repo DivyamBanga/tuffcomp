@@ -21,7 +21,7 @@ Play it here: https://divyambanga.github.io/tuffcomp/
    them there.
 4. Spin again for the next pick. Repeat until all 11 are filled.
 5. The engine rates your team on quality, fit, nation chemistry, and balance, then shows who
-   won and why.
+   won and why. Your best rating and every past attempt are saved on your device.
 
 Play solo to chase your best score, play in person by passing the phone around, and later play
 online with friends by joining a room code.
@@ -48,16 +48,19 @@ The whole point. It rates a team on four things:
 - Chemistry: do they share a nation
 - Balance: does the team cover every job, or is it missing something
 
-Not built yet. Full details and formulas are in PRD.md.
+You see a live version of this as you build, and the full breakdown once your XI is complete.
+Full details and formulas are in PRD.md.
 
 ## Tech
 
 - React, TypeScript, Vite, Tailwind
-- The rating engine will be a plain TypeScript module with its own tests
+- The rating engine is a plain TypeScript module with its own tests, no UI dependencies
+- Best score and history are saved with localStorage, capped at your last 50 attempts
 - Free to host on GitHub Pages
 - Online multiplayer later on Supabase free tier
 
 ## Status
 
-Foundation, real data, and the spin-and-build pitch screen are done. Rating engine is next.
-See PRD.md for the full plan and the phase by phase build steps.
+Single player is done: spin, build, get rated, and your best score and history stick around
+across visits. Multiplayer is next. See PRD.md for the full plan and the phase by phase build
+steps.

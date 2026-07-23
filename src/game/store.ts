@@ -2,7 +2,10 @@ import { create } from 'zustand'
 import { loadSquads } from '../data/loadSquads'
 import { FORMATION_433 } from '../engine/formations'
 import { bestCompatibility } from '../engine/positions'
+import { rateTeam } from '../engine/rating'
+import { buildTeam, isComplete } from '../engine/team'
 import type { Player, Squad } from '../types'
+import { bestRating, loadHistory, saveHistory, type SavedResult } from './persistence'
 
 type SquadsStatus = 'loading' | 'ready' | 'error'
 
@@ -21,6 +24,12 @@ interface GameState {
   // A player picked off a revealed roster, waiting to be placed on the pitch.
   pendingPlayer: Player | null
 
+  // Completed attempts, persisted locally, most recent first.
+  history: SavedResult[]
+  lastResult: SavedResult | null
+  resultsOpen: boolean
+  historyOpen: boolean
+
   initSquads: () => Promise<void>
   startSpin: () => void
   revealSquad: () => void
@@ -30,6 +39,10 @@ interface GameState {
   cancelPlacement: () => void
   placeInSlot: (slotId: string) => void
   clearSlot: (slotId: string) => void
+  closeResults: () => void
+  openResults: () => void
+  openHistory: () => void
+  closeHistory: () => void
   reset: () => void
 }
 
@@ -55,6 +68,10 @@ export const useGameStore = create<GameState>((set, get) => ({
   spinOpen: false,
   pendingSquad: null,
   pendingPlayer: null,
+  history: loadHistory(),
+  lastResult: null,
+  resultsOpen: false,
+  historyOpen: false,
 
   initSquads: async () => {
     if (get().squadsStatus === 'ready') return
@@ -87,19 +104,62 @@ export const useGameStore = create<GameState>((set, get) => ({
   cancelPlacement: () => set({ pendingPlayer: null }),
 
   placeInSlot: (slotId) => {
-    const { pendingPlayer, assignments } = get()
+    const { pendingPlayer, assignments, history } = get()
     if (!pendingPlayer) return
+
     const next = { ...assignments }
     // a player can only occupy one slot at a time
     for (const key of Object.keys(next)) {
       if (next[key]?.id === pendingPlayer.id) next[key] = null
     }
     next[slotId] = pendingPlayer
-    set({ assignments: next, pendingPlayer: null })
+
+    const team = buildTeam(next)
+    if (!isComplete(team)) {
+      set({ assignments: next, pendingPlayer: null })
+      return
+    }
+
+    const breakdown = rateTeam(team)
+    const previousBest = bestRating(history)
+    const result: SavedResult = {
+      ...breakdown,
+      id: crypto.randomUUID(),
+      playedAt: new Date().toISOString(),
+      isNewBest: previousBest === null || breakdown.rating > previousBest,
+      players: team.map(({ slot, player }) => ({
+        slotLabel: slot.label,
+        name: player.name,
+        nation: player.nation,
+        overall: player.overall,
+      })),
+    }
+    const nextHistory = [result, ...history]
+    saveHistory(nextHistory)
+
+    set({
+      assignments: next,
+      pendingPlayer: null,
+      history: nextHistory,
+      lastResult: result,
+      resultsOpen: true,
+    })
   },
 
   clearSlot: (slotId) => set((state) => ({ assignments: { ...state.assignments, [slotId]: null } })),
 
+  closeResults: () => set({ resultsOpen: false }),
+  openResults: () => set({ resultsOpen: true }),
+  openHistory: () => set({ historyOpen: true }),
+  closeHistory: () => set({ historyOpen: false }),
+
   reset: () =>
-    set({ assignments: emptyAssignments(), spinOpen: false, pendingSquad: null, pendingPlayer: null }),
+    set({
+      assignments: emptyAssignments(),
+      spinOpen: false,
+      pendingSquad: null,
+      pendingPlayer: null,
+      lastResult: null,
+      resultsOpen: false,
+    }),
 }))

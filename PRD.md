@@ -4,9 +4,10 @@ A drafting game where you and your friends build sports teams from real players,
 analysis engine rates every team on quality, positional fit, chemistry, and balance to
 decide who built the best squad.
 
-Status: Phase 0-2 built (foundation, data, build screen). Rating engine (Phase 3) not yet built.
+Status: Phase 0-4 built. Single-player is feature-complete: spin, build, get rated, best score
+and history persist locally across reloads. Multiplayer (Phase 5+) is next.
 Owner: Divyam.
-Last updated: 2026-07-22.
+Last updated: 2026-07-23.
 
 ---
 
@@ -454,7 +455,8 @@ All free, web-first, with a clean upgrade path to online multiplayer.
   pipeline (`scripts/generate-squads.mjs`, `scripts/fetch-raw-data.mjs`, `csv-parse` as a
   dev-only dependency - none of this ships to the client).
 - Testing: Vitest for the engine and data validation
-- Persistence (single player): localStorage for best scores and history (Phase 4, not yet built)
+- Persistence (single player): localStorage for best score and history, capped at 50 entries,
+  read/write wrapped so a full quota or private-browsing block never crashes gameplay
 - Hosting: GitHub Pages via GitHub Actions (builds, tests, and deploys on every push to main)
 - Online multiplayer (later): Supabase free tier for realtime rooms and light persistence
 
@@ -462,10 +464,11 @@ Project structure:
 
 ```
 src/
-  engine/        rating (not yet built), positions, formations, tests
+  engine/        rating, quality, fit, chemistry, balance, explain, positions,
+                  formations, team, math, tests
   data/          squads.json (generated), loader, validation
-  game/          game state (zustand)
-  ui/            screens and components (pitch, spin/pick sheet)
+  game/          game state (zustand), localStorage persistence
+  ui/            screens and components (pitch, spin/pick sheet, results, history)
   types/         shared TypeScript types
 scripts/
   fetch-raw-data.mjs     downloads the raw CSVs (gitignored output)
@@ -483,8 +486,9 @@ phones. It should read as a polished, finished game, not a prototype.
 
 Key screens (current, as built):
 - Build (the pitch): a single always-visible 4-3-3 pitch with 11 tappable slots, a fill counter,
-  and a single SPIN button. There's no separate home/mode-picker screen yet - World Cup mode
-  with a single formation is the entire game so far.
+  a BEST badge (once you have history), a live provisional rating that updates after every pick,
+  and a SPIN button. There's no separate home/mode-picker screen yet - World Cup mode with a
+  single formation is the entire game so far.
 - Spin and pick sheet: opened by the SPIN button, not tied to any particular slot. Plays a brief
   slot-machine flicker through squad names, lands on one real Team-Year, and shows that squad's
   roster filtered to players who have at least one open slot somewhere in the lineup. Pick one,
@@ -494,10 +498,16 @@ Key screens (current, as built):
   inert, and tapping a lit slot places them there. A banner above the pitch names who you're
   placing and offers a cancel. Tapping an already-filled slot (outside placement mode) clears it
   directly - no confirmation, since refilling is one tap away.
+- Results: opens automatically the moment the 11th slot is filled. Shows the overall rating, a
+  NEW BEST badge when it beats your prior best, the four-component breakdown (Quality, Fit,
+  Chemistry, Balance), and the generated summary. "Play Again" resets the pitch; "History" jumps
+  straight to the history panel. Once the XI is complete, a "View Results" button on the build
+  screen reopens it on demand.
+- History: every completed XI, most recent first, with its date, rating, a BEST tag on whichever
+  one was the best at the time, and a one-line summary. Persisted in localStorage, so it survives
+  reloads. Opened from the header at any time, or from the Results panel.
 
 Planned, not yet built:
-- Results: final rating with the four-component breakdown and a generated summary (Phase 3).
-- Best score / history (solo): your personal best and past attempts (Phase 4).
 - A ranked leaderboard and 1v1 head-to-head option for multiplayer (Phase 5+).
 
 Interaction choice: tap-to-assign as the primary interaction because it works great on phones.
@@ -562,17 +572,29 @@ the end of each phase, per your request for commits throughout development.
   eligible open slots are tappable during placement, and the full dataset passes
   `canFillFormation` for every squad (Vitest, currently 15 passing tests).
 
-### Phase 3 - Rating engine
-- Implement Q, F, C, B and the final blended rating as a pure module. Verify: unit tests for
-  each component pass on fixture teams.
-- Implement the generated explanation. Verify: summaries name the real weakest area on fixtures.
-- Wire the live provisional rating and the results breakdown into the UI. Verify: rating updates
-  as you build and matches the engine output.
-- Tune weights against curated squads. Verify: the asserted orderings in section 5.6 all hold.
+### Phase 3 - Rating engine (done)
+- Implemented Q, F, C, B and the final blended rating as a pure module (`engine/quality.ts`,
+  `fit.ts`, `chemistry.ts`, `balance.ts`, `rating.ts`), each independently unit tested plus
+  full-pipeline integration tests in `rating.test.ts`. Verify: all four PRD 5.6 assertions hold
+  (balanced beats lopsided, misplaced striker beats natural CB, single-nation beats scattered,
+  stripping playmakers trips the creativity gap) - 30 tests, 45 total passing at phase end.
+- Implemented the generated explanation (`engine/explain.ts`). Verify: summaries name the real
+  weakest area on fixtures (confirmed via `explain.test.ts` and manual spot checks against real
+  squad data - see the commit for a France 2022 vs. Honduras 1982 vs. a random scattered-nation
+  pull comparison).
+- Wired a live provisional rating (updates after every pick, works on partial teams down to 1
+  filled slot) and a Results panel with the full breakdown into the UI. Verify: rating shown in
+  the UI matches `rateTeam()` output directly, since the UI calls the same function with no
+  duplicated logic.
+- Weights (Q 0.40, F 0.20, C 0.15, B 0.25) validated by spot-checking real data rather than a
+  full tuning pass - see section 14 for the open item to revisit this with more playtesting.
 
-### Phase 4 - Single-player loop
-- Spin, build, rate, save best, show history, all persisted locally. Verify: play a full solo
-  session and confirm the best score persists across reloads.
+### Phase 4 - Single-player loop (done)
+- Spin, build, rate, save best, show history, all persisted locally
+  (`game/persistence.ts`, localStorage, capped at 50 entries). A completed XI is scored and
+  recorded automatically the moment the 11th slot is filled - no separate "save" step. Verify:
+  play a full solo session, confirm the Results panel appears automatically on completion, reload
+  the page, and confirm the BEST badge and History panel still show the prior attempt.
 
 ### Phase 5 - Hotseat multiplayer
 - Local pass-and-play for 2 to 8 players: players take turns spinning and picking in snake order
@@ -619,7 +641,9 @@ the end of each phase, per your request for commits throughout development.
 
 ## 14. Open questions and future ideas
 
-- Exact starting weights and the balance-need list will be tuned during Phase 3 playtesting.
+- Rating weights (Q/F/C/B) and the balance-need weights shipped at their PRD starting values,
+  validated only by unit test assertions and a handful of manual spot checks (section 12, Phase
+  3) - not a real playtesting pass. Worth revisiting once more games get played.
 - The rating formula constants in section 7.3 (appearance/goal/award/market-value weights) were
   picked from spot-checking a handful of known players, not a full audit - may need retuning
   once more of the dataset gets played with.
@@ -642,3 +666,6 @@ the end of each phase, per your request for commits throughout development.
 - Snake order: turn order in multiplayer, 1-2-3-3-2-1, so no one always picks last.
 - Chemistry: bonus from players sharing a nation (section 5.2).
 - Balance: how well a team covers every key job without gaps or redundancy.
+- Live rating: the provisional 0-100 rating shown while building, before the XI is complete.
+- Results: the panel shown once the XI is complete - final rating, breakdown, and summary.
+- History: every completed XI, persisted locally, most recent first (section 12, Phase 4).
