@@ -11,7 +11,3 @@ export async function loadCards(): Promise<Card[]> {
   cached = module.default as unknown as Card[]
   return cached
 }
-
-export function loadFranchises(): Promise<Record<string, string>> {
-  return import('./franchises.json').then((m) => m.default as Record<string, string>)
-}

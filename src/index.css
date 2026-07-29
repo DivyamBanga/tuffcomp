@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Anton&family=Orbitron:wght@500;700;900&family=Archivo:ital,wght@0,400;0,500;0,600;0,700;0,800;1,500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Orbitron:wght@500;700;900&family=Archivo:ital,wght@0,400;0,500;0,600;0,700;0,800;1,600&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -10,7 +10,8 @@
   --color-arena: #0b0b10;
   --color-arena-soft: #14141c;
   --color-panel: #1a1a24;
-  --color-hardwood: #2a1a10;
+  --color-panel-deep: #10101a;
+  --color-bezel: #262635;
   --color-neon: #ffb300;
   --color-neon-dim: #cc8f00;
   --color-ember: #ff4d2e;
@@ -18,6 +19,18 @@
   --color-chalk: #f4f2ec;
   --color-mist: #8b8b9e;
   --color-gold: #ffd45c;
+  --color-goat: #ffd45c;
+  --color-superstar: #c77dff;
+  --color-allstar: #4dd8ff;
+  --color-starter: #8ce99a;
+  --color-rotation: #9aa0b0;
+
+  --animate-flicker-in: flicker-in 0.9s both;
+  --animate-marquee: marquee 18s linear infinite;
+  --animate-pulse-glow: pulse-glow 1.6s ease-in-out infinite;
+  --animate-count-pop: count-pop 0.35s ease-out both;
+  --animate-confetti: confetti-fall 3.2s linear infinite;
+  --animate-card-in: card-in 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both;
 }
 
 html {
@@ -26,5 +39,166 @@ html {
 
 body {
   background-color: var(--color-arena);
+  color: var(--color-chalk);
   font-family: var(--font-sans);
+  background-image:
+    radial-gradient(ellipse 60% 40% at 15% -5%, rgba(255, 179, 0, 0.08), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 85% -5%, rgba(77, 216, 255, 0.07), transparent 60%),
+    radial-gradient(ellipse 90% 60% at 50% 115%, rgba(255, 77, 46, 0.05), transparent 60%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+/* Fine film grain over everything, arena-broadcast style */
+.grain::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Jumbotron bezel: metal rim + inner screen */
+.bezel {
+  border: 1px solid var(--color-bezel);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 18%),
+    var(--color-panel);
+  box-shadow:
+    0 0 0 3px #08080d,
+    0 0 0 4px #2c2c3c,
+    0 14px 40px -18px rgba(0, 0, 0, 0.9);
+}
+
+/* CRT scanlines for the "screen" inside a bezel */
+.scanlines {
+  position: relative;
+}
+.scanlines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.025) 0 1px,
+    transparent 1px 3px
+  );
+}
+
+/* LED dot-matrix strip (tickers) */
+.led-strip {
+  background:
+    radial-gradient(circle at 1.5px 1.5px, rgba(255, 179, 0, 0.16) 0.8px, transparent 1.2px) 0 0 / 5px 5px,
+    #0d0d14;
+  border-block: 1px solid #23232f;
+}
+
+.neon-text {
+  color: var(--color-neon);
+  text-shadow:
+    0 0 6px rgba(255, 179, 0, 0.7),
+    0 0 24px rgba(255, 179, 0, 0.35),
+    0 0 60px rgba(255, 179, 0, 0.18);
+}
+
+.ice-text {
+  color: var(--color-ice);
+  text-shadow: 0 0 6px rgba(77, 216, 255, 0.6), 0 0 24px rgba(77, 216, 255, 0.3);
+}
+
+/* Chunky arcade button */
+.btn-arcade {
+  font-family: var(--font-display);
+  letter-spacing: 0.08em;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition: transform 0.06s ease, box-shadow 0.06s ease, filter 0.15s ease;
+  user-select: none;
+}
+.btn-arcade:hover {
+  filter: brightness(1.08);
+}
+.btn-arcade:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.btn-arcade:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* Tier foils */
+.foil-GOAT {
+  background: linear-gradient(160deg, #3a2c08, #241a06 45%, #1a1206);
+  border-color: rgba(255, 212, 92, 0.65);
+  box-shadow: 0 0 22px -4px rgba(255, 212, 92, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+.foil-SUPERSTAR {
+  background: linear-gradient(160deg, #2c1440, #1e0e2e 50%, #150a20);
+  border-color: rgba(199, 125, 255, 0.6);
+  box-shadow: 0 0 20px -4px rgba(199, 125, 255, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.foil-ALLSTAR {
+  background: linear-gradient(160deg, #0c2a38, #0a1e2c 50%, #081824);
+  border-color: rgba(77, 216, 255, 0.55);
+  box-shadow: 0 0 18px -6px rgba(77, 216, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+.foil-STARTER {
+  background: linear-gradient(160deg, #12301a, #0d2414 50%, #0a1c10);
+  border-color: rgba(140, 233, 154, 0.5);
+  box-shadow: 0 0 14px -6px rgba(140, 233, 154, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.foil-ROTATION {
+  background: linear-gradient(160deg, #23232e, #1a1a24 50%, #15151e);
+  border-color: rgba(154, 160, 176, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.text-tier-GOAT { color: var(--color-goat); }
+.text-tier-SUPERSTAR { color: var(--color-superstar); }
+.text-tier-ALLSTAR { color: var(--color-allstar); }
+.text-tier-STARTER { color: var(--color-starter); }
+.text-tier-ROTATION { color: var(--color-rotation); }
+
+@keyframes flicker-in {
+  0% { opacity: 0; }
+  8% { opacity: 1; }
+  14% { opacity: 0.25; }
+  22% { opacity: 1; }
+  30% { opacity: 0.45; }
+  42% { opacity: 1; }
+  100% { opacity: 1; }
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@keyframes count-pop {
+  0% { transform: scale(1.6); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes card-in {
+  0% { transform: translateY(26px) rotateY(80deg) scale(0.9); opacity: 0; }
+  100% { transform: translateY(0) rotateY(0) scale(1); opacity: 1; }
+}
+
+@keyframes confetti-fall {
+  0% { transform: translateY(-8vh) rotate(0deg); opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(105vh) rotate(680deg); opacity: 0; }
 }
