@@ -34,10 +34,11 @@ class FakeWire implements WireConnection {
 class FakePeer implements WirePeer {
   private openHandlers: ((id: string) => void)[] = []
   private connHandlers: ((conn: WireConnection) => void)[] = []
-  constructor(
-    private registry: Map<string, FakePeer>,
-    private id: string,
-  ) {
+  private registry: Map<string, FakePeer>
+  private id: string
+  constructor(registry: Map<string, FakePeer>, id: string) {
+    this.registry = registry
+    this.id = id
     registry.set(id, this)
   }
   onOpen(handler: (id: string) => void) {
