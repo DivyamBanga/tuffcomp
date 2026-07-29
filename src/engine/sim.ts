@@ -1,6 +1,6 @@
 import type { Card } from '../types'
 import { evaluateTeam, usageOverload } from './evaluate'
-import { ALL_SLOTS, STARTER_SLOTS, rosterCards, type Roster } from './lineup'
+import { ALL_SLOTS, STARTER_SLOTS, type Roster } from './lineup'
 import { mulberry32, randNormal, type Rng } from './prng'
 
 // ------------------------------------------------------------- sim profiles
