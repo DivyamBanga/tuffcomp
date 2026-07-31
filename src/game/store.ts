@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { loadCards } from '../data/loadCards'
+import { clearJudgeKey, hasJudgeKey, judgeLeague, saveJudgeKey } from '../llm/judge'
 import { myPlayerId, saveName, savedName } from '../net/identity'
 import { makeRoomCode, type LobbySnapshot } from '../net/protocol'
 import { GuestRoom, HostRoom, realPeerFactory } from '../net/room'
@@ -29,10 +30,14 @@ interface GameStore {
   trophies: Trophy[]
   trophySaved: boolean
   autoSimming: boolean
+  judgeArmed: boolean
+  judging: boolean
 
   setName: (name: string) => void
   setConfig: (config: Partial<MatchConfig>) => void
   setCpuDrafters: (n: number) => void
+  armJudge: (key: string) => void
+  disarmJudge: () => void
   goHome: () => void
   goSetup: (mode: 'solo' | 'host') => void
   goJoin: () => void
@@ -43,6 +48,7 @@ interface GameStore {
   hostStart: () => void
   joinRoom: (code: string) => Promise<void>
   dispatch: (action: MatchAction) => void
+  startCompetition: () => Promise<void>
   simAllRemaining: () => void
 }
 
@@ -111,6 +117,8 @@ export const useGame = create<GameStore>((set, get) => {
     trophies: loadTrophies(),
     trophySaved: false,
     autoSimming: false,
+    judgeArmed: hasJudgeKey(),
+    judging: false,
 
     setName: (name) => {
       saveName(name)
@@ -119,6 +127,15 @@ export const useGame = create<GameStore>((set, get) => {
 
     setConfig: (partial) => set({ config: { ...get().config, ...partial } }),
     setCpuDrafters: (n) => set({ cpuDrafters: n }),
+
+    armJudge: (key) => {
+      saveJudgeKey(key)
+      set({ judgeArmed: hasJudgeKey() })
+    },
+    disarmJudge: () => {
+      clearJudgeKey()
+      set({ judgeArmed: false })
+    },
 
     goHome: () => {
       stopAutoSim(set)
@@ -203,6 +220,24 @@ export const useGame = create<GameStore>((set, get) => {
         set({ match: next })
         maybeRecordTrophy(next)
       }
+    },
+
+    // Tip-off: if the judge is armed, run one scouting call first (host or
+    // solo only), then begin. Any judge failure falls through silently.
+    startCompetition: async () => {
+      const { match, sessionMode, judging } = get()
+      if (judging) return
+      if (sessionMode === 'guest') return
+      if (match && match.phase === 'preview' && match.judge === null && hasJudgeKey()) {
+        set({ judging: true })
+        try {
+          const judgment = await judgeLeague(match.entries, match.rosters)
+          if (judgment) get().dispatch({ type: 'SET_JUDGE', judgment })
+        } finally {
+          set({ judging: false })
+        }
+      }
+      get().dispatch({ type: 'BEGIN_COMPETITION' })
     },
 
     simAllRemaining: () => {

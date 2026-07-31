@@ -106,6 +106,7 @@ export class HostRoom {
         return action.action.playerId === senderId
       case 'MOVE_AFTER_DRAFT':
         return action.playerId === senderId
+      case 'SET_JUDGE':
       case 'BEGIN_COMPETITION':
       case 'SIM_NEXT':
         return isHost

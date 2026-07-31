@@ -61,6 +61,7 @@ export function HomeScreen() {
             <span className="plate !text-[10px] text-faint transition-colors group-hover:text-hot">→</span>
           </button>
         ))}
+        <JudgeCell />
       </Sheet>
 
       <div className="animate-rise flex items-center justify-between" style={{ animationDelay: '120ms' }}>
@@ -69,6 +70,58 @@ export function HomeScreen() {
         </button>
         <p className="plate plate-faint !text-[8.5px]">REAL PLAYERS · REAL STATS · PHOTOS © NBA</p>
       </div>
+    </div>
+  )
+}
+
+// The optional AI scout. The key is saved to localStorage in THIS browser
+// only - never in the code, the bundle, or any network message to friends.
+function JudgeCell() {
+  const { judgeArmed, armJudge, disarmJudge } = useGame()
+  const [key, setKey] = useState('')
+
+  return (
+    <div className="cell">
+      {judgeArmed ? (
+        <div className="flex items-center justify-between gap-3">
+          <span className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-hot" />
+            <span className="plate !text-[9px] text-ink">AI SCOUT ARMED · CLAUDE HAIKU</span>
+          </span>
+          <button type="button" onClick={disarmJudge} className="plate cursor-pointer !text-[9px] transition-colors hover:text-ink">
+            REMOVE KEY
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-end gap-2.5">
+            <label className="min-w-0 flex-1">
+              <span className="plate plate-faint mb-1 block !text-[9px]">AI SCOUT · ANTHROPIC API KEY · OPTIONAL</span>
+              <input
+                type="password"
+                value={key}
+                onChange={(e) => setKey(e.target.value)}
+                placeholder="sk-ant-…"
+                autoComplete="off"
+                className="field num w-full text-sm"
+              />
+            </label>
+            <Btn
+              disabled={!key.trim().startsWith('sk-ant')}
+              onClick={() => {
+                armJudge(key)
+                setKey('')
+              }}
+              className="!px-3.5 !py-2"
+            >
+              ARM
+            </Btn>
+          </div>
+          <p className="mt-1.5 text-[11px] leading-snug text-faint">
+            Stays in this browser only. One Haiku call per season scouts every drafted team for star power, fit, shooting and defense.
+          </p>
+        </>
+      )}
     </div>
   )
 }

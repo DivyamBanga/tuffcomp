@@ -6,7 +6,7 @@ import type { MatchState } from '../game/match'
 import { Btn, Meter, MiniCard, Sheet, StatusLine } from './components'
 
 export function PreviewScreen({ match }: { match: MatchState }) {
-  const { myId, dispatch, sessionMode } = useGame()
+  const { myId, dispatch, sessionMode, startCompetition, judging, judgeArmed } = useGame()
   const [viewId, setViewId] = useState(myId in match.rosters ? myId : match.entries[0].id)
   const [swapFrom, setSwapFrom] = useState<SlotId | null>(null)
 
@@ -14,6 +14,7 @@ export function PreviewScreen({ match }: { match: MatchState }) {
   const roster = match.rosters[viewId]
   const evaluation = evaluateTeam(roster)
   const viewingMine = viewId === myId
+  const scout = match.judge?.teams[viewId] ?? null
 
   function tapSlot(slot: SlotId) {
     if (!viewingMine) return
@@ -82,6 +83,17 @@ export function PreviewScreen({ match }: { match: MatchState }) {
             {evaluation.duos.length > 0 && (
               <p className="plate mt-2 !text-[9px]">REAL DUOS: {evaluation.duos.join(' · ')}</p>
             )}
+            {scout && (
+              <div className="mt-4 border border-line p-3">
+                <div className="flex items-baseline justify-between">
+                  <span className="plate !text-[9px]">SCOUT'S TAKE · CLAUDE</span>
+                  <span className="num text-[9.5px] text-faint">
+                    OFF {scout.offense} · DEF {scout.defense} · STAR {scout.star} · FIT {scout.cohesion}
+                  </span>
+                </div>
+                <p className="mt-1.5 text-[13px] leading-snug text-ink/90">{scout.blurb}</p>
+              </div>
+            )}
           </div>
           <div className="grid content-start gap-3.5">
             <Meter label="QUALITY" value={evaluation.quality} />
@@ -100,11 +112,20 @@ export function PreviewScreen({ match }: { match: MatchState }) {
         </div>
       </Sheet>
 
-      <div className="flex justify-center">
+      <div className="flex flex-col items-center gap-2">
         {canControl ? (
-          <Btn primary onClick={() => dispatch({ type: 'BEGIN_COMPETITION' })}>
-            {match.config.format === 'season' ? 'TIP OFF THE SEASON →' : 'START THE PLAYOFFS →'}
-          </Btn>
+          <>
+            <Btn primary onClick={() => void startCompetition()} disabled={judging}>
+              {judging
+                ? 'THE SCOUT IS WATCHING FILM…'
+                : match.config.format === 'season'
+                  ? 'TIP OFF THE SEASON →'
+                  : 'START THE PLAYOFFS →'}
+            </Btn>
+            {judgeArmed && !match.judge && !judging && (
+              <span className="plate plate-faint !text-[8.5px]">AI SCOUT ARMED · JUDGES EVERY TEAM AT TIP-OFF</span>
+            )}
+          </>
         ) : (
           <StatusLine text="WAITING FOR HOST TO TIP OFF…" className="!border-0" />
         )}

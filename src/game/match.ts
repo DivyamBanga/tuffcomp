@@ -3,6 +3,7 @@ import { evaluateTeam } from '../engine/evaluate'
 import { canPlaySlot, rosterCards, type Roster, type SlotId } from '../engine/lineup'
 import { hashSeed, mulberry32, shuffle } from '../engine/prng'
 import { simGame, simProfile, type GameResult, type TeamSimProfile } from '../engine/sim'
+import { judgeAdjustments, type LeagueJudgment } from '../llm/judge'
 import {
   applyAction as applyDraftAction,
   advanceCpuTurns,
@@ -66,6 +67,8 @@ export interface MatchState {
   phase: MatchPhase
   draft: DraftState | null
   rosters: Record<string, Roster>
+  // Optional AI scouting report; nudges the sim within hard caps.
+  judge: LeagueJudgment | null
   season: SeasonState | null
   playoffRounds: PlayoffRoundState[]
   seeds: string[]
@@ -76,6 +79,7 @@ export interface MatchState {
 
 export type MatchAction =
   | { type: 'DRAFT'; action: DraftAction }
+  | { type: 'SET_JUDGE'; judgment: LeagueJudgment }
   | { type: 'BEGIN_COMPETITION' }
   | { type: 'SIM_NEXT' }
   | { type: 'MOVE_AFTER_DRAFT'; playerId: string; from: SlotId; to: SlotId }
@@ -101,6 +105,7 @@ export function initMatch(config: MatchConfig, players: DraftPlayer[], ctx: Draf
     phase: 'draft',
     draft,
     rosters: {},
+    judge: null,
     season: null,
     playoffRounds: [],
     seeds: [],
@@ -113,7 +118,19 @@ export function initMatch(config: MatchConfig, players: DraftPlayer[], ctx: Draf
 // --------------------------------------------------------------- helpers
 
 export function buildProfiles(state: MatchState): Map<string, TeamSimProfile> {
-  return new Map(Object.entries(state.rosters).map(([id, roster]) => [id, simProfile(id, roster)]))
+  const ids = Object.keys(state.rosters)
+  const adjustments = state.judge ? judgeAdjustments(state.judge, ids) : null
+  return new Map(
+    ids.map((id) => {
+      const profile = simProfile(id, state.rosters[id])
+      const adj = adjustments?.get(id)
+      if (adj) {
+        profile.offense += adj.dOff
+        profile.defense += adj.dDef
+      }
+      return [id, profile]
+    }),
+  )
 }
 
 export function entryName(state: MatchState, id: string): string {
@@ -258,6 +275,12 @@ export function applyMatchAction(state: MatchState, action: MatchAction, ctx: Dr
     if (toCard && !canPlaySlot(toCard, action.from)) return state
     const moved: Roster = { ...roster, [action.from]: toCard, [action.to]: fromCard }
     return { ...state, rosters: { ...state.rosters, [action.playerId]: moved } }
+  }
+
+  // The host's AI scouting report, judged once between draft and tip-off.
+  if (action.type === 'SET_JUDGE') {
+    if (state.phase !== 'preview' || state.judge !== null) return state
+    return { ...state, judge: action.judgment }
   }
 
   if (action.type === 'BEGIN_COMPETITION') {

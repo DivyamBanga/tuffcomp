@@ -13,6 +13,7 @@
     "data:generate": "node scripts/generate-players.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
     "@tailwindcss/vite": "^4.3.3",
     "motion": "^12.43.0",
     "peerjs": "^1.5.5",
