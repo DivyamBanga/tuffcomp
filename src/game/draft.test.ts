@@ -137,29 +137,6 @@ describe('full tiered draft', () => {
   })
 })
 
-describe('franchise mode', () => {
-  it('offers come from one franchise-era window', () => {
-    const state = initDraft('franchise', HUMANS, 21, ctx)
-    const offer = state.offer!
-    expect(offer.franchise).not.toBeNull()
-    const { abbrev, startSeason, endSeason } = offer.franchise!
-    for (const card of offer.cards) {
-      expect(card.teams).toContain(abbrev)
-      expect(card.season).toBeGreaterThanOrEqual(startSeason)
-      expect(card.season).toBeLessThanOrEqual(endSeason)
-    }
-  })
-
-  it('plays out to complete legal teams too', () => {
-    const state = playOut(initDraft('franchise', HUMANS, 5, ctx))
-    for (const playerId of ['p1', 'p2', 'p3']) {
-      const cards = rosterCards(state.teams[playerId].roster)
-      expect(cards.length).toBe(ROUNDS)
-      expect(canFieldStarters(cards)).toBe(true)
-    }
-  })
-})
-
 describe('MOVE', () => {
   it('swaps two legally-compatible slots and rejects illegal moves', () => {
     const state = playOut(initDraft('tiers', HUMANS, 33, ctx))

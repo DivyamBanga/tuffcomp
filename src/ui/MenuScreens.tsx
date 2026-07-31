@@ -88,13 +88,6 @@ export function SetupScreen() {
             body="Everyone climbs the same rarity ladder. Round 1 guarantees a star. Last round is a jackpot wildcard."
             onClick={() => setConfig({ mode: 'tiers' })}
           />
-          <ModeCard
-            active={config.mode === 'franchise'}
-            title="FRANCHISE SPINS"
-            tag="PURE CHAOS"
-            body="Spin a real franchise era - 90s Bulls, 2017 Warriors, Showtime Lakers - and grab anyone still available."
-            onClick={() => setConfig({ mode: 'franchise' })}
-          />
         </div>
       </JumboPanel>
 

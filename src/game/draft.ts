@@ -12,7 +12,7 @@ import { hashSeed, mulberry32, shuffle, type Rng } from '../engine/prng'
 
 // ---------------------------------------------------------------- config
 
-export type DraftMode = 'tiers' | 'franchise'
+export type DraftMode = 'tiers'
 
 export interface DraftPlayer {
   id: string
@@ -52,16 +52,9 @@ const ROUND_TIER_WEIGHTS: Record<number, [Tier, number][]> = {
 
 // ----------------------------------------------------------------- state
 
-export interface FranchiseWindow {
-  abbrev: string
-  startSeason: number
-  endSeason: number
-}
-
 export interface Offer {
   cards: Card[]
   tier: Tier | null
-  franchise: FranchiseWindow | null
   forPlayerId: string
   round: number
 }
@@ -213,47 +206,14 @@ function tierOffer(state: DraftState, ctx: DraftCtx, rng: Rng, playerId: string,
     if (!cards.some((x) => x.id === c.id)) cards.push(c)
   }
 
-  return { cards, tier, franchise: null, forPlayerId: playerId, round }
-}
-
-const FRANCHISE_WINDOW = 2
-const FRANCHISE_OFFER_MAX = 12
-const FRANCHISE_MIN_CARDS = 6
-
-function franchiseOffer(state: DraftState, ctx: DraftCtx, rng: Rng, playerId: string, round: number): Offer {
-  const roster = state.teams[playerId].roster
-  const constrain = mustFillStarter(state, playerId)
-  const pool = availableCards(state, ctx)
-
-  // Spin an (era, franchise) with enough qualified cards left.
-  for (let attempt = 0; attempt < 60; attempt++) {
-    const anchor = pool[Math.floor(rng() * pool.length)]
-    const abbrev = anchor.teams[Math.floor(rng() * anchor.teams.length)]
-    const start = anchor.season - FRANCHISE_WINDOW
-    const end = anchor.season + FRANCHISE_WINDOW
-    let cards = pool.filter((c) => c.season >= start && c.season <= end && c.teams.includes(abbrev))
-    if (constrain) {
-      const fillers = cards.filter((c) => fillsOpenStarter(c, roster))
-      if (fillers.length === 0) continue
-      cards = fillers.length >= 3 ? fillers : cards
-      if (!cards.some((c) => fillsOpenStarter(c, roster))) continue
-    }
-    if (cards.length >= FRANCHISE_MIN_CARDS) {
-      const top = [...cards].sort((a, b) => b.ovr - a.ovr).slice(0, FRANCHISE_OFFER_MAX)
-      return { cards: top, tier: null, franchise: { abbrev, startSeason: start, endSeason: end }, forPlayerId: playerId, round }
-    }
-  }
-  // Pathological fallback: behave like a tier offer so the draft never stalls.
-  return tierOffer(state, ctx, rng, playerId, round)
+  return { cards, tier, forPlayerId: playerId, round }
 }
 
 function generateOffer(state: DraftState, ctx: DraftCtx): Offer {
   const playerId = state.order[state.pickIndex]
   const round = currentRound(state)
   const rng = mulberry32(hashSeed(`${state.seed}:${state.spinCount}`))
-  return state.mode === 'franchise'
-    ? franchiseOffer(state, ctx, rng, playerId, round)
-    : tierOffer(state, ctx, rng, playerId, round)
+  return tierOffer(state, ctx, rng, playerId, round)
 }
 
 // ------------------------------------------------------------- placement

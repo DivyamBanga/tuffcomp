@@ -97,7 +97,7 @@ describe('straight series format', () => {
       { id: 'p3', name: 'C', isCpu: false },
       { id: 'p4', name: 'D', isCpu: false },
     ]
-    let state = initMatch({ mode: 'franchise', format: 'series', leagueSize: 4, seed: 77 }, players, ctx)
+    let state = initMatch({ mode: 'tiers', format: 'series', leagueSize: 4, seed: 77 }, players, ctx)
     state = draftToCompletion(state)
     state = applyMatchAction(state, { type: 'BEGIN_COMPETITION' }, ctx)
     expect(state.playoffRounds[0].name).toBe('SEMIFINALS')

@@ -1,13 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import franchises from '../data/franchises.json'
 import { currentRound, ROUNDS } from '../game/draft'
 import { useGame } from '../game/store'
 import type { MatchState } from '../game/match'
 import { ALL_SLOTS } from '../engine/lineup'
 import type { Card } from '../types'
 import { Headshot, JumboPanel, LedTicker, MiniCard, NeonButton, PlayerCard } from './components'
-
-const FRANCHISE_NAMES = franchises as Record<string, string>
 
 const SPIN_MS = 1150
 
@@ -48,9 +45,6 @@ export function DraftScreen({ match }: { match: MatchState }) {
   }, [offer, draft.spinCount, myId])
 
   const tierLabel = offer?.tier ?? 'MYSTERY'
-  const franchiseBanner = offer?.franchise
-    ? `${FRANCHISE_NAMES[offer.franchise.abbrev] ?? offer.franchise.abbrev} '${String(offer.franchise.startSeason).slice(2)}-'${String(offer.franchise.endSeason).slice(2)}`
-    : null
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-4 px-3 py-5">
@@ -61,7 +55,7 @@ export function DraftScreen({ match }: { match: MatchState }) {
       />
 
       <JumboPanel
-        title={franchiseBanner ? `FRANCHISE SPIN · ${franchiseBanner}` : `ROUND ${round} · ${String(tierLabel)} SPIN`}
+        title={`ROUND ${round} · ${String(tierLabel)} SPIN`}
         right={
           <span className={`font-led text-xs font-bold tracking-[0.25em] ${myTurn ? 'neon-text animate-pulse-glow' : 'text-mist'}`}>
             {myTurn ? '▶ YOUR SPIN' : `${turnPlayer?.name ?? ''}'S SPIN`}
