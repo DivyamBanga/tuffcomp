@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { sortStandings } from '../engine/season'
 import type { GameResult } from '../engine/sim'
 import { useGame } from '../game/store'
@@ -6,12 +7,12 @@ import { Btn, NumTick, PenStrokes, RingSeal, Sheet, StatusLine, TeamMark } from 
 
 // ------------------------------------------------------------- scoreboard
 
-function ScoreboardPanel({ match, result }: { match: MatchState; result: GameResult }) {
+function ScoreboardPanel({ match, result, title }: { match: MatchState; result: GameResult; title: string }) {
   const overtime = result.overtimes > 0 ? ` · ${result.overtimes}OT` : ''
   const sides = [result.away, result.home] as const
   const labels = ['AWAY', 'HOME'] as const
   return (
-    <Sheet title={`LATEST GAME${overtime}`}>
+    <Sheet title={`${title}${overtime}`}>
       <div className="grid gap-px">
         {sides.map((side, idx) => {
           const won = result.winnerId === side.teamId
@@ -83,6 +84,82 @@ function BoxScore({ match, result }: { match: MatchState; result: GameResult }) 
   )
 }
 
+// --------------------------------------------------------------- game log
+
+interface LoggedGame {
+  label: string
+  result: GameResult
+}
+
+// The ledger: every played game, newest at the bottom, tap a row to pull
+// its full box score up into the scoreboard.
+function GameLog({
+  match,
+  games,
+  selected,
+  onSelect,
+}: {
+  match: MatchState
+  games: LoggedGame[]
+  selected: number
+  onSelect: (index: number) => void
+}) {
+  const scroller = useRef<HTMLDivElement>(null)
+  const followTail = selected === games.length - 1
+
+  useEffect(() => {
+    if (followTail && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight
+  }, [games.length, followTail])
+
+  return (
+    <Sheet title={`GAME LOG · ${games.length}`} pad={false}>
+      <div ref={scroller} className="max-h-72 overflow-y-auto">
+        {games.length === 0 && <p className="plate plate-faint px-4 py-6 text-center !text-[9px]">NOTHING IN THE BOOKS YET</p>}
+        {games.map((game, i) => {
+          const { result } = game
+          const awayWon = result.winnerId === result.away.teamId
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onSelect(i)}
+              className={`num flex w-full items-center gap-2 border-t border-line px-3 py-1.5 text-left text-[10.5px] transition-colors first:border-t-0 ${
+                i === selected ? 'bg-paper2 text-ink' : 'text-dim hover:bg-paper2/60'
+              }`}
+            >
+              <span className="w-9 shrink-0 text-[9px] text-faint">{game.label}</span>
+              <span className="min-w-0 flex-1 truncate">
+                <span className={awayWon ? 'font-bold text-ink' : ''}>{entryName(match, result.away.teamId)}</span>
+                <span className="text-faint"> @ </span>
+                <span className={awayWon ? '' : 'font-bold text-ink'}>{entryName(match, result.home.teamId)}</span>
+              </span>
+              <span className="shrink-0">
+                {result.away.score}-{result.home.score}
+              </span>
+              <span className="w-16 shrink-0 truncate text-right text-[9px] text-faint">
+                ★{result.star.name.split(' ').at(-1)} {result.star.line.split(' ')[0]}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </Sheet>
+  )
+}
+
+// Follow the newest game as sims land, but let the user browse history.
+function useGameSelection(count: number): [number, (i: number) => void] {
+  const [selected, setSelected] = useState(count - 1)
+  const lastCount = useRef(count)
+  useEffect(() => {
+    if (count !== lastCount.current) {
+      lastCount.current = count
+      setSelected(count - 1)
+    }
+  }, [count])
+  return [selected, setSelected]
+}
+
 // ----------------------------------------------------------------- season
 
 export function SeasonScreen({ match }: { match: MatchState }) {
@@ -91,8 +168,11 @@ export function SeasonScreen({ match }: { match: MatchState }) {
   const canControl = sessionMode !== 'guest'
   const table = sortStandings(season.standings)
   const nextGame = season.schedule[season.played.length] ?? null
-  const latest = season.played.at(-1) ?? null
   const gamesLeft = season.schedule.length - season.played.length
+
+  const logged: LoggedGame[] = season.played.map((result, i) => ({ label: `G${i + 1}`, result }))
+  const [selected, setSelected] = useGameSelection(logged.length)
+  const shown = logged[selected] ?? null
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-4 px-3 py-5">
@@ -102,7 +182,8 @@ export function SeasonScreen({ match }: { match: MatchState }) {
         }`}
       />
 
-      <div className="grid gap-4 md:grid-cols-[290px_1fr]">
+      <div className="grid gap-4 md:grid-cols-[300px_1fr]">
+        <div className="flex flex-col gap-4">
         <Sheet title="STANDINGS">
           <table className="ledger">
             <thead>
@@ -135,10 +216,12 @@ export function SeasonScreen({ match }: { match: MatchState }) {
             </tbody>
           </table>
         </Sheet>
+        <GameLog match={match} games={logged} selected={selected} onSelect={setSelected} />
+        </div>
 
         <div className="flex flex-col gap-4">
-          {latest ? (
-            <ScoreboardPanel match={match} result={latest} />
+          {shown ? (
+            <ScoreboardPanel match={match} result={shown.result} title={`GAME ${selected + 1} OF ${season.schedule.length}`} />
           ) : (
             <Sheet>
               <p className="plate py-10 text-center !text-[10px]">THE SEASON AWAITS…</p>
@@ -190,12 +273,21 @@ function SeriesCard({ match, matchup }: { match: MatchState; matchup: PlayoffMat
   )
 }
 
+const ROUND_ABBREV: Record<string, string> = { 'THE FINALS': 'F', SEMIFINALS: 'SF', QUARTERFINALS: 'QF' }
+
 export function PlayoffsScreen({ match }: { match: MatchState }) {
   const { dispatch, sessionMode, simAllRemaining, autoSimming } = useGame()
   const canControl = sessionMode !== 'guest'
   const activeRound = match.playoffRounds.at(-1)!
   const activeMatchup = activeRound.matchups.find((m) => m.winnerId === null)
-  const latest = activeMatchup?.games.at(-1) ?? activeRound.matchups.flatMap((m) => m.games).at(-1) ?? null
+
+  const logged: LoggedGame[] = match.playoffRounds.flatMap((round) =>
+    round.matchups.flatMap((m) =>
+      m.games.map((result, g) => ({ label: `${ROUND_ABBREV[round.name] ?? 'R'} G${g + 1}`, result })),
+    ),
+  )
+  const [selected, setSelected] = useGameSelection(logged.length)
+  const shown = logged[selected] ?? null
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-4 px-3 py-5">
@@ -218,11 +310,12 @@ export function PlayoffsScreen({ match }: { match: MatchState }) {
               </div>
             </Sheet>
           ))}
+          <GameLog match={match} games={logged} selected={selected} onSelect={setSelected} />
         </div>
 
         <div className="flex flex-col gap-4">
-          {latest ? (
-            <ScoreboardPanel match={match} result={latest} />
+          {shown ? (
+            <ScoreboardPanel match={match} result={shown.result} title={shown.label === logged.at(-1)?.label && selected === logged.length - 1 ? `LATEST · ${shown.label}` : shown.label} />
           ) : (
             <Sheet>
               <p className="plate py-10 text-center !text-[10px]">THE BRACKET IS SET…</p>

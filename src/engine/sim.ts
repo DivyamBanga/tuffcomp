@@ -108,10 +108,23 @@ function apportion(total: number, weights: number[]): number[] {
   return floors
 }
 
+// Heavy-tail form nights: a real scorer can catch fire and take over a
+// game (LeBron going for 50), or go cold. Apportioning keeps every box
+// summing exactly to the team total, so a heater eats teammates' shots -
+// exactly like a real takeover night.
+function scoringForm(player: SimPlayer, rng: Rng): number {
+  const sc = (player.card.attrs.sc - 25) / 74
+  const heaterChance = 0.02 + sc * sc * 0.05 // elite scorers ~7%, role players ~2%
+  const roll = rng()
+  if (roll < heaterChance) return 1.5 + rng() * 0.45 // takeover night
+  if (roll > 0.95) return 0.72 // cold night
+  return 1
+}
+
 function buildBox(profile: TeamSimProfile, teamScore: number, rng: Rng): BoxLine[] {
   const players = profile.players
   const scoringWeights = players.map(
-    (p) => p.usageShare * (0.6 + 0.8 * ((p.card.attrs.sc - 25) / 74)) * (0.85 + rng() * 0.3),
+    (p) => p.usageShare * (0.6 + 0.8 * ((p.card.attrs.sc - 25) / 74)) * (0.85 + rng() * 0.3) * scoringForm(p, rng),
   )
   const points = apportion(teamScore, scoringWeights)
 

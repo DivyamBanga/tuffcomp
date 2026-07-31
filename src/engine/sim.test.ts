@@ -90,6 +90,29 @@ describe('simGame', () => {
   })
 })
 
+describe('heater nights', () => {
+  it('a superstar can pop for 45+, stays realistic, and means hold', () => {
+    const star = makeCard({ id: 'the-star', pos: 'SG', ovr: 99, usg: 34, attrs: { sc: 99, sh: 95, df: 80 } })
+    const starTeam = simProfile('A', makeRoster({ SG: star }))
+    const opponent = simProfile('B', weakRoster())
+
+    const points: number[] = []
+    for (let seed = 0; seed < 400; seed++) {
+      const game = seed % 2 === 0 ? simGame(starTeam, opponent, seed) : simGame(opponent, starTeam, seed)
+      const side = game.home.teamId === 'A' ? game.home : game.away
+      points.push(side.box.find((line) => line.cardId === 'the-star')!.pts)
+    }
+
+    const max = Math.max(...points)
+    const mean = points.reduce((a, b) => a + b, 0) / points.length
+    expect(max).toBeGreaterThanOrEqual(45) // takeover nights exist
+    expect(max).toBeLessThanOrEqual(72) // but stay on this planet
+    expect(mean).toBeGreaterThan(20)
+    expect(mean).toBeLessThan(40)
+    expect(points.filter((p) => p >= 45).length / points.length).toBeLessThan(0.12) // heaters are rare
+  })
+})
+
 describe('simSeries', () => {
   it('ends the moment someone reaches 4 wins, max 7 games', () => {
     const a = simProfile('A', strongRoster())
