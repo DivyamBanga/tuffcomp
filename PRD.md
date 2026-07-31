@@ -5,10 +5,11 @@ An arcade NBA drafting game for a friend group. Spin for real player-season card
 a season, and the playoffs to crown a champion - scoring not just star power but how well a
 team actually fits together.
 
-Status: v1 shipped. Solo vs CPU and online rooms both live.
+Status: v2 shipped. Solo vs CPU and online rooms both live; Theme Draft, the
+AI scout, the game ledger, and the drafting-sheet reskin landed 2026-07-31.
 Owner: Divyam. Repo: tuffcomp (game branded RING CHASERS).
 Live: https://divyambanga.github.io/tuffcomp/
-Last updated: 2026-07-29.
+Last updated: 2026-07-31.
 
 This replaces the earlier soccer drafting game that lived in this repo (fully recoverable in
 git history before commit "Start from scratch").
@@ -24,22 +25,29 @@ starters and bench, admire your team power breakdown, then sim: game by game wit
 scores and box lines, a full season with standings, playoff series with win pips, confetti
 and a gold ring for the champion. Fun first, fair always, real NBA history throughout.
 
-Design references: the 82-0 web game (spin franchise/era, stats-driven outcomes, roster
-shape matters), Roblox card drafters like Soccer Card Draft (rarity rolling, chemistry,
-juicy card reveals), NBA Jam (the arcade jumbotron energy of the UI).
+Design references: the 82-0 web game (stats-driven outcomes, roster shape matters),
+Roblox card drafters like Soccer Card Draft (rarity rolling, chemistry, juicy card
+reveals), and for the v2 look, divyambanga.github.io (the drafting-sheet system:
+hairline grid, system type, one accent).
 
 ---
 
 ## 2. Core decisions (user-confirmed)
 
 - Player pool: all-time, 1980-2026, cards are player-seasons, era-normalized ratings.
-- Draft: BOTH modes - Tiered Spins (the fair flagship) and Franchise Spins (chaos mode).
+- Draft: BOTH modes - Tiered Spins (the classic ladder) and Theme Draft (fair,
+  varied, knowledge-driven; replaced Franchise Spins in v2 on user request).
 - Competition: BOTH formats - full Season + Playoffs, or Straight Playoffs (best-of-7s).
 - Multiplayer: online rooms from day one (no accounts, no server - see section 8), plus
   solo vs CPU drafters, and CPU filler franchises pad any league.
-- Teams: 5 starters (PG/SG/SF/PF/C) + 3 bench. 2 rerolls per player per draft.
-- Look: arcade jumbotron. Anton display type, Orbitron LED digits, dark arena, neon amber,
-  tier foils, scanlines, confetti buzzer moments.
+- Teams: 5 starters (PG/SG/SF/PF/C) + 3 bench. 2 rerolls per player (tiered mode);
+  3 strikes per player (theme mode, hard input).
+- Look (v2): monochrome drafting sheet matching divyambanga.github.io - warm
+  near-black paper (#121211), off-white ink, hairline rules that draw in hot and
+  cool, system type with mono annotations, player photos as the one full-color
+  element, gold reserved for GOAT cards, clinched titles, and the ring.
+- AI judge: optional Claude Haiku scout (one call per season), key stored in the
+  host's browser only, blended into the sim within hard caps.
 - Name: RING CHASERS (repo stays tuffcomp; branding only).
 
 ---
@@ -79,19 +87,41 @@ players.json (~3.7MB) ships as a lazily-imported chunk; raw CSVs stay out of git
 
 ## 4. Drafting
 
-8 snake rounds (1-2-3-3-2-1 order), one pick per round, 2 rerolls each, one real person per
+8 snake rounds (1-2-3-3-2-1 order), one pick per round, one real person per
 league (no '91 and '96 Jordan coexisting, no person on two teams).
 
-Tiered Spins (fair mode): every player climbs the same ladder -
+Tiered Spins (classic): every player climbs the same ladder -
 - R1: SUPERSTAR spin with a 25% GOAT jackpot
 - R2: 30% SUPERSTAR / 70% ALLSTAR, R3: ALLSTAR, R4-R5: STARTER, R6-R7: ROTATION
 - R8: WILDCARD - equal odds of ANY tier, GOAT included
-Each spin deals 4 cards; take one or reroll. Offers bias toward your open starter needs, and
-once your open starter slots equal your remaining picks, only starter-fillers are offered -
-no team can finish unable to field five.
+Each spin deals 4 cards; take one or reroll (2 rerolls each). Offers bias toward your open
+starter needs, and once your open starter slots equal your remaining picks, only
+starter-fillers are offered - no team can finish unable to field five.
 
-Franchise Spins (chaos mode): each spin lands on a real franchise-era window (e.g. Bulls
-'94-'98) and offers its best available cards. Same guardrails.
+Theme Draft (v2 flagship): every round deals ONE theme shared by every drafter that
+round - the fairness is that everyone answers the same question. ~40 themes in
+`src/game/themes.ts` across four kinds:
+- franchise ("LOS ANGELES LAKERS ONLY", 25 storied franchises)
+- era (the '80s / '90s / 2000s / 2010s / modern)
+- stat archetypes (40% from deep, 25+ PPG, lockdown defenders, glass cleaners,
+  floor generals, rim protectors, iron men) computed from real stat lines
+- curated lists (MVP winners, Hall of Famers from data; international and
+  white-guys lists hand-curated and validated by tests against the pool)
+Theme selection is seeded per draft, no repeats, and only themes with real depth
+qualify (enough distinct people and 85+ OVR stars for the league size).
+
+Pick input is a lobby-wide setting:
+- TYPE-IN (hard): name your pick blind. Fuzzy matching forgives typos and
+  shorthand ("steph curry", "jokic", bare "jordan" resolves to the famous one).
+  An off-theme, already-taken, or can't-fit call burns 1 of 3 strikes; gibberish
+  costs nothing. Out of strikes, a board bails you out for the rest of the draft.
+- GRID (easy): a board of the best eligible fits, one card per person.
+A typed player lands as their best season passing the theme. If a theme dries up
+for a drafter's forced starter needs, the board falls back open so nobody
+softlocks. CPUs call names like humans and never waste strikes. Everyone sees
+the last pick and the last whiff ("tried JORDAN - never a Laker").
+
+Franchise Spins was removed in v2 (recoverable in git history).
 
 Placement: natural open starter slot first, else bench (or stretch when starters must fill).
 Rearrange freely anytime pre-tipoff via tap-two-slots-to-swap. Position legality: natural at
@@ -125,8 +155,13 @@ Pure TS on a seeded PRNG - a seed fully determines every game, so results replay
 
 - Team profiles: offense (scoring/shooting/playmaking) and defense (defense/rim/rebounding),
   nudged by chemistry, balance, and usage overload - best-fitting teams genuinely win more.
+  When the AI judge ran, its capped adjustments (section 6b) shift these a few points.
 - Games: quarter-by-quarter scores around a league baseline (~111) with home advantage and
   overtime, full box scores apportioned so lines sum exactly to team totals, star-of-game.
+- Form nights (v2): elite scorers catch fire on ~7% of nights (role players ~2%) with a
+  1.5-1.95x scoring-share multiplier - a superstar can realistically go for 45-55 - plus
+  occasional cold nights. Boxes still sum exactly; a 400-game distribution test pins the
+  tails (max >= 45, max <= 72, heaters rare, means stable).
 - Series: best-of-7, 2-2-1-1-1 home court.
 - Seasons: double round-robin, standings with streaks and point-diff tiebreaks, season MVP.
 - Playoffs: bracket seeded by standings (season format) or team power (straight playoffs),
@@ -135,12 +170,32 @@ Pure TS on a seeded PRNG - a seed fully determines every game, so results replay
 
 ---
 
+## 6b. The AI judge (v2)
+
+Optional Claude Haiku scout (`src/llm/judge.ts`), off unless a key is armed:
+
+- Key: pasted into an in-app field, stored in that browser's localStorage only -
+  never in git, the bundle, logs, or any peer message. Masked input, one-tap removal.
+- One call per season at tip-off (host or solo only), `claude-haiku-4-5` via the
+  official SDK (lazy-imported, browser access header). Structured outputs with a
+  strict JSON schema, so the response cannot be malformed.
+- The prompt sends every roster's compact stat lines and asks for 0-100 scores
+  relative to this league only - offense, defense, star power, cohesion - plus a
+  one-line scouting blurb per team (shown on the preview screen).
+- Blending is fair by construction: scores are centered on the league mean and hard
+  capped (max ~6 points of sim offense/defense each way, ~3 points per game), so the
+  deterministic engine still rules and a hallucination cannot wreck a season. Any
+  failure (no key, bad response, network) silently falls back to the pure engine.
+- Online: only the host judges; the finished judgment broadcasts in snapshots and
+  guests see the same scouting report.
+
 ## 7. Match flow
 
 One serializable reducer (`src/game/match.ts`): draft -> preview (rearrange lineups, see
-power breakdowns) -> season or straight playoffs -> game-by-game sims (SIM NEXT, or auto-sim
-the rest with a ticker cadence) -> champion + confetti -> trophy case (localStorage, tracks
-your rings).
+power breakdowns and the scout's take) -> optional judge call -> season or straight
+playoffs -> game-by-game sims (SIM NEXT, or auto-sim the rest with a ticker cadence) with
+a tap-to-browse game ledger -> champion + gold-ring seal + pen-stroke confetti -> trophy
+case (localStorage, tracks your rings).
 
 ---
 
@@ -166,15 +221,22 @@ Solo mode never touches networking.
 ## 9. Tech
 
 - React 19 + Vite + TypeScript + Tailwind v4 (CSS-first theme), zustand, motion (installed
-  for future flourishes; current animations are CSS keyframes), peerjs.
-- Testing: Vitest - 70 tests: data validation, engine, sim, season, draft, match, netcode
-  over fake wire, and a store-level smoke test that plays a full solo game to a champion.
+  for future flourishes; current animations are CSS keyframes), peerjs,
+  @anthropic-ai/sdk (lazy-imported, judge only).
+- Look: design tokens and hairline-grid system in `src/index.css`, lifted from
+  divyambanga.github.io (draw-in rules, cooling lines, plate labels, ledgers,
+  ring seal, pen-stroke confetti). No web fonts - system sans + ui-monospace.
+- Testing: Vitest - 93 tests: data validation, engine, sim (incl. heater
+  distribution), season, draft (tiered + themes + fuzzy matching + curated-list
+  validation), match, judge (prompt/parse/blend, no network), netcode over fake
+  wire, and a store-level smoke test that plays a full solo game to a champion.
 - Deploy: GitHub Pages via Actions (npm ci, test, build on every push). All free.
 - Structure:
   - scripts/ - data fetch + generate (dev-only, csv-parse)
   - src/data/ - players.json + franchises.json (generated), loader, validation tests
   - src/engine/ - lineup, evaluate, prng, sim, season (+ tests)
-  - src/game/ - draft, match, store, trophies (+ tests)
+  - src/game/ - draft, themes, match, store, trophies (+ tests)
+  - src/llm/ - judge: key storage, prompt, parse, blend (+ tests)
   - src/net/ - protocol, room, identity (+ tests)
   - src/ui/ - components, menu/draft/preview/competition screens
 

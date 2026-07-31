@@ -1,37 +1,58 @@
 # RING CHASERS
 
-An arcade NBA drafting game for me and my friends. Spin for real player season cards from
-1980 through 2026, think '96 Jordan or '16 Curry or '26 Wemby, draft an 8 man squad, set
-your lineup, then the sim engine plays it all out: games, a season, playoffs, and a champion
-with confetti and a gold ring.
+An NBA drafting game for me and my friends. Draft real player seasons from
+1980 through 2026, think '96 Jordan or '16 Curry or '26 Wemby, build an 8 man
+squad, then the sim engine plays it all out: games, a season, playoffs, and a
+champion with a gold ring.
 
 Play it here: https://divyambanga.github.io/tuffcomp/
 
-## How it plays
+## Two ways to draft
 
-1. Everyone drafts through the same ladder of spins. Round 1 guarantees a superstar, the
-   last round is a wildcard where anyone can drop. Or play Franchise mode and spin real
-   eras like the 90s Bulls. 2 rerolls each, snake order, no duplicate players.
-2. Set your five starters and bench. The engine rates your team on quality, fit, chemistry
-   from real life teammates, and balance. Five ball hogs will not work.
-3. Sim it. Quarter by quarter scores, box scores, standings, playoff series, Finals MVP.
-   Best fitting teams genuinely win more, not just the biggest names.
-4. Champion gets the ring. Your rings collect in the trophy case.
+1. Tiered Spins, the classic. Everyone climbs the same rarity ladder of card
+   spins. Round 1 guarantees a star, the last round is a jackpot wildcard.
+   2 rerolls each.
+2. Theme Draft, the fair fight. Every round deals one theme that applies to
+   everyone: Lakers only, 40% from deep, the '90s only, MVP winners only,
+   white guys only. In hard mode you type your pick blind from memory, with
+   typo forgiveness and 3 strikes before the board bails you out. Easy mode
+   shows a grid. Your pick lands as that player's best season fitting the
+   theme. Snake order, one real person per league.
+
+## Then the season
+
+Set your five starters and bench. The engine rates quality, fit, chemistry
+from real life teammates, and balance. If you paste in an Anthropic API key,
+an AI scout (Claude Haiku, one call per season) judges every roster for star
+power, fit, shooting and defense, writes a scouting blurb, and nudges the sim
+within hard caps so it can never break fairness. The key stays in your
+browser only.
+
+Sim game by game or all at once. A game log keeps every box score one tap
+away, and stars have real form nights: an elite scorer can catch fire and go
+for 50, rarely, like real life.
 
 ## Playing with friends
 
-Create a room and share the 4 letter code. Friends join from their own devices, no
-accounts, no server, it runs peer to peer. Or play solo against CPU drafters. CPU teams
-fill out the league either way.
+Create a room and share the 4 letter code. Friends join from their own
+devices, no accounts, no server, it runs peer to peer. Or play solo against
+CPU drafters who call names like you do.
+
+## The look
+
+Monochrome drafting sheet: hairline rules that draw themselves in, system
+type, mono ledgers. The player photos are the color. Gold shows up only for
+GOAT cards, clinched titles, and the ring.
 
 ## The real data
 
-11,408 real player seasons, 2,054 players, 40 franchises, all with real stats and real NBA
-headshots. Ratings are computed from era relative numbers so a 1987 season competes fairly
-with a 2026 one. Season stats come from
+11,408 real player seasons, 2,054 players, 40 franchises, real stats and
+real NBA headshots, era relative ratings so 1987 competes fairly with 2026.
+Season stats come from
 [sumitrodatta/bball-reference-datasets](https://github.com/sumitrodatta/bball-reference-datasets),
 data derived from Basketball Reference. Headshot photo ids come from
-[swar/nba_api](https://github.com/swar/nba_api). Photos are served from the NBA's public CDN.
+[swar/nba_api](https://github.com/swar/nba_api). Photos are served from the
+NBA's public CDN.
 
 To regenerate the card pool:
 
@@ -45,9 +66,10 @@ npm run data:generate
 - React, TypeScript, Vite, Tailwind, zustand
 - Pure TypeScript engines for evaluation and simulation, fully seeded and deterministic
 - PeerJS WebRTC for online rooms, no backend anywhere
-- 70 tests with Vitest, deployed free on GitHub Pages
+- Optional Claude Haiku judge via the Anthropic SDK, key never leaves your browser
+- 93 tests with Vitest, deployed free on GitHub Pages
 
 ## Status
 
-v1 is live: solo and online, both draft modes, season plus playoffs or straight series,
-trophy case. See PRD.md for the full design.
+v2 is live: both draft modes, solo and online, AI scout, game ledger, the
+drafting sheet look. See PRD.md for the full design.
