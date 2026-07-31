@@ -4,7 +4,7 @@ import { useGame } from '../game/store'
 import type { MatchState } from '../game/match'
 import { ALL_SLOTS } from '../engine/lineup'
 import type { Card } from '../types'
-import { Headshot, JumboPanel, LedTicker, MiniCard, NeonButton, PlayerCard } from './components'
+import { Btn, Headshot, MiniCard, PlayerCard, Sheet, StatusLine } from './components'
 
 const SPIN_MS = 1150
 
@@ -48,26 +48,26 @@ export function DraftScreen({ match }: { match: MatchState }) {
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-4 px-3 py-5">
-      <LedTicker
+      <StatusLine
         text={`ROUND ${round} OF ${ROUNDS} · PICK ${draft.pickIndex + 1}/${draft.order.length} · ${
           myTurn ? 'YOU ARE ON THE CLOCK' : `${turnPlayer?.name ?? '...'} IS ON THE CLOCK`
         }`}
       />
 
-      <JumboPanel
+      <Sheet
         title={`ROUND ${round} · ${String(tierLabel)} SPIN`}
         right={
-          <span className={`font-led text-xs font-bold tracking-[0.25em] ${myTurn ? 'neon-text animate-pulse-glow' : 'text-mist'}`}>
+          <span className={`plate !text-[9px] ${myTurn ? 'animate-pulse text-hot' : ''}`}>
             {myTurn ? '▶ YOUR SPIN' : `${turnPlayer?.name ?? ''}'S SPIN`}
           </span>
         }
       >
         {spinning && myTurn ? (
-          <div className="flex h-64 flex-col items-center justify-center gap-3">
-            <div className="bezel h-36 w-36 overflow-hidden rounded-xl">
+          <div className="flex h-64 flex-col items-center justify-center gap-4">
+            <div className="sheet h-36 w-36 overflow-hidden">
               {flicker && <Headshot card={flicker} className="h-full w-full" />}
             </div>
-            <p className="animate-pulse-glow font-led text-sm font-bold tracking-[0.4em] text-neon">SPINNING…</p>
+            <p className="plate animate-pulse !text-[10px] text-hot">DEALING…</p>
           </div>
         ) : offer ? (
           <>
@@ -76,7 +76,7 @@ export function DraftScreen({ match }: { match: MatchState }) {
                 <PlayerCard
                   key={card.id}
                   card={card}
-                  delayMs={i * 90}
+                  delayMs={i * 80}
                   onClick={myTurn ? () => dispatch({ type: 'DRAFT', action: { type: 'TAKE', playerId: myId, cardId: card.id } }) : undefined}
                 />
               ))}
@@ -84,42 +84,38 @@ export function DraftScreen({ match }: { match: MatchState }) {
             <div className="mt-4 flex items-center justify-center gap-4">
               {myTurn ? (
                 <>
-                  <NeonButton
-                    color="ember"
-                    className="!text-base"
+                  <Btn
                     disabled={myTeam.rerollsLeft <= 0}
                     onClick={() => dispatch({ type: 'DRAFT', action: { type: 'REROLL', playerId: myId } })}
                   >
-                    ↻ REROLL ({myTeam.rerollsLeft} LEFT)
-                  </NeonButton>
-                  <span className="font-led text-[10px] tracking-[0.25em] text-mist">TAP A CARD TO DRAFT</span>
+                    ↻ REROLL · {myTeam.rerollsLeft} LEFT
+                  </Btn>
+                  <span className="plate plate-faint !text-[9px]">TAP A CARD TO DRAFT</span>
                 </>
               ) : (
-                <span className="animate-pulse-glow font-led text-[11px] tracking-[0.3em] text-mist">
-                  WAITING FOR {turnPlayer?.name?.toUpperCase() ?? '...'}
-                </span>
+                <span className="plate animate-pulse !text-[9px]">WAITING FOR {turnPlayer?.name?.toUpperCase() ?? '...'}</span>
               )}
             </div>
           </>
         ) : null}
-      </JumboPanel>
+      </Sheet>
 
       <div className="grid gap-3 md:grid-cols-2">
         {draft.players.map((p) => {
           const team = draft.teams[p.id]
           return (
-            <JumboPanel
+            <Sheet
               key={p.id}
               title={`${p.name}${p.id === myId ? ' (YOU)' : ''}${p.isCpu ? ' · CPU' : ''}`}
-              right={<span className="font-led text-[10px] tracking-widest text-mist">↻ {team.rerollsLeft}</span>}
-              className={p.id === turnId ? 'ring-2 ring-neon/60' : ''}
+              right={<span className="plate plate-faint !text-[9px]">↻ {team.rerollsLeft}</span>}
+              className={p.id === turnId ? '!border-hot' : ''}
             >
               <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
                 {ALL_SLOTS.map((slot) => (
                   <MiniCard key={slot} label={slot} card={team.roster[slot]} />
                 ))}
               </div>
-            </JumboPanel>
+            </Sheet>
           )
         })}
       </div>

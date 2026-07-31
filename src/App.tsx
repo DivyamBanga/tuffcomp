@@ -24,7 +24,7 @@ function GameRouter() {
 function App() {
   const screen = useGame((s) => s.screen)
   return (
-    <div className="grain min-h-screen">
+    <div className="min-h-screen">
       {screen === 'home' && <HomeScreen />}
       {screen === 'setup' && <SetupScreen />}
       {screen === 'join' && <JoinScreen />}

@@ -2,11 +2,7 @@ import { sortStandings } from '../engine/season'
 import type { GameResult } from '../engine/sim'
 import { useGame } from '../game/store'
 import { entryName, type MatchState, type PlayoffMatchup } from '../game/match'
-import { JumboPanel, LedScore, LedTicker, NeonButton, TeamBadge } from './components'
-
-function entryIndex(match: MatchState, id: string): number {
-  return Math.max(0, match.entries.findIndex((e) => e.id === id))
-}
+import { Btn, NumTick, PenStrokes, RingSeal, Sheet, StatusLine, TeamMark } from './components'
 
 // ------------------------------------------------------------- scoreboard
 
@@ -15,56 +11,56 @@ function ScoreboardPanel({ match, result }: { match: MatchState; result: GameRes
   const sides = [result.away, result.home] as const
   const labels = ['AWAY', 'HOME'] as const
   return (
-    <JumboPanel title={`LATEST GAME${overtime}`}>
-      <div className="grid gap-2">
+    <Sheet title={`LATEST GAME${overtime}`}>
+      <div className="grid gap-px">
         {sides.map((side, idx) => {
           const won = result.winnerId === side.teamId
           return (
-            <div key={side.teamId} className={`flex items-center gap-3 rounded-lg px-3 py-2 ${won ? 'bg-neon/10' : 'bg-panel-deep'}`}>
-              <TeamBadge name={entryName(match, side.teamId)} index={entryIndex(match, side.teamId)} />
+            <div key={side.teamId} className={`flex items-center gap-3 border px-3 py-2.5 ${won ? 'border-line bg-paper2' : 'border-transparent'}`}>
+              <TeamMark name={entryName(match, side.teamId)} />
               <span className="min-w-0 flex-1">
-                <span className="block truncate font-display text-lg tracking-wide text-chalk">
+                <span className={`headline block truncate text-base ${won ? 'text-ink' : 'text-dim'}`}>
                   {entryName(match, side.teamId)}
                 </span>
-                <span className="font-led text-[9px] tracking-widest text-mist">{labels[idx]}</span>
+                <span className="plate plate-faint !text-[8.5px]">{labels[idx]}</span>
               </span>
-              <span className="flex gap-2.5 font-led text-xs text-mist">
+              <span className="num hidden gap-2.5 text-[11px] text-faint sm:flex">
                 {side.quarters.map((q, i) => (
                   <span key={i} className="w-6 text-center">
                     {q}
                   </span>
                 ))}
               </span>
-              <LedScore value={side.score} accent={won} />
+              <NumTick value={side.score} />
             </div>
           )
         })}
       </div>
-      <p className="mt-3 text-center font-led text-[10px] tracking-[0.25em] text-ice">
-        ⭐ STAR OF THE GAME: {result.star.name.toUpperCase()} · {result.star.line}
+      <p className="plate mt-3 text-center !text-[9px]">
+        ★ STAR OF THE GAME: {result.star.name.toUpperCase()} · {result.star.line}
       </p>
       <BoxScore match={match} result={result} />
-    </JumboPanel>
+    </Sheet>
   )
 }
 
 function BoxScore({ match, result }: { match: MatchState; result: GameResult }) {
   return (
     <details className="mt-3">
-      <summary className="cursor-pointer text-center font-led text-[10px] tracking-[0.3em] text-mist hover:text-chalk">
-        FULL BOX SCORE
+      <summary className="plate cursor-pointer list-none text-center !text-[9px] transition-colors hover:text-ink">
+        FULL BOX SCORE ▾
       </summary>
       <div className="mt-2 grid gap-3 sm:grid-cols-2">
         {[result.away, result.home].map((side) => (
-          <div key={side.teamId} className="rounded-lg border border-bezel bg-panel-deep p-2">
-            <p className="mb-1 font-display text-sm tracking-wide text-chalk">{entryName(match, side.teamId)}</p>
-            <table className="w-full font-led text-[10px] text-chalk/80">
+          <div key={side.teamId} className="border border-line p-2.5">
+            <p className="headline mb-1.5 text-sm text-ink">{entryName(match, side.teamId)}</p>
+            <table className="ledger">
               <thead>
-                <tr className="text-mist">
-                  <th className="text-left font-normal">PLAYER</th>
-                  <th className="text-right font-normal">P</th>
-                  <th className="text-right font-normal">R</th>
-                  <th className="text-right font-normal">A</th>
+                <tr>
+                  <th>PLAYER</th>
+                  <th>PTS</th>
+                  <th>REB</th>
+                  <th>AST</th>
                 </tr>
               </thead>
               <tbody>
@@ -72,10 +68,10 @@ function BoxScore({ match, result }: { match: MatchState; result: GameResult }) 
                   .sort((a, b) => b.pts - a.pts)
                   .map((line) => (
                     <tr key={line.cardId}>
-                      <td className="max-w-28 truncate text-left">{line.name.split(' ').at(-1)}</td>
-                      <td className="text-right">{line.pts}</td>
-                      <td className="text-right">{line.reb}</td>
-                      <td className="text-right">{line.ast}</td>
+                      <td className="max-w-28 truncate">{line.name.split(' ').at(-1)}</td>
+                      <td>{line.pts}</td>
+                      <td>{line.reb}</td>
+                      <td>{line.ast}</td>
                     </tr>
                   ))}
               </tbody>
@@ -100,58 +96,60 @@ export function SeasonScreen({ match }: { match: MatchState }) {
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-4 px-3 py-5">
-      <LedTicker
+      <StatusLine
         text={`REGULAR SEASON · ${gamesLeft} GAMES REMAIN · ${
           nextGame ? `NEXT: ${entryName(match, nextGame.awayId)} AT ${entryName(match, nextGame.homeId)}` : 'SEASON COMPLETE'
         }`}
       />
 
-      <div className="grid gap-4 md:grid-cols-[300px_1fr]">
-        <JumboPanel title="STANDINGS">
-          <table className="w-full">
+      <div className="grid gap-4 md:grid-cols-[290px_1fr]">
+        <Sheet title="STANDINGS">
+          <table className="ledger">
             <thead>
-              <tr className="font-led text-[9px] tracking-widest text-mist">
-                <th className="pb-1 text-left font-normal">TEAM</th>
-                <th className="pb-1 text-right font-normal">W</th>
-                <th className="pb-1 text-right font-normal">L</th>
-                <th className="pb-1 text-right font-normal">STRK</th>
+              <tr>
+                <th>TEAM</th>
+                <th>W</th>
+                <th>L</th>
+                <th>STRK</th>
               </tr>
             </thead>
             <tbody>
               {table.map((row, i) => (
-                <tr key={row.teamId} className="border-t border-bezel/60">
-                  <td className="flex items-center gap-2 py-1.5">
-                    <span className="w-4 font-led text-[10px] text-mist">{i + 1}</span>
-                    <TeamBadge name={entryName(match, row.teamId)} index={entryIndex(match, row.teamId)} size={22} />
-                    <span className="max-w-28 truncate text-sm font-semibold">{entryName(match, row.teamId)}</span>
+                <tr key={row.teamId}>
+                  <td>
+                    <span className="flex items-center gap-2">
+                      <span className="num w-4 text-[10px] text-faint">{i + 1}</span>
+                      <TeamMark name={entryName(match, row.teamId)} size={20} />
+                      <span className="max-w-28 truncate font-sans text-[12.5px] font-semibold text-ink">
+                        {entryName(match, row.teamId)}
+                      </span>
+                    </span>
                   </td>
-                  <td className="text-right font-led text-sm font-bold text-chalk">{row.wins}</td>
-                  <td className="text-right font-led text-sm text-mist">{row.losses}</td>
-                  <td className={`text-right font-led text-[10px] ${row.streak >= 3 ? 'text-ember' : 'text-mist'}`}>
-                    {row.streak > 0 ? `W${row.streak}${row.streak >= 3 ? ' 🔥' : ''}` : row.streak < 0 ? `L${-row.streak}` : '—'}
+                  <td className="font-bold">{row.wins}</td>
+                  <td className="text-dim">{row.losses}</td>
+                  <td className={row.streak >= 3 ? 'text-ink' : 'text-faint'}>
+                    {row.streak > 0 ? `W${row.streak}` : row.streak < 0 ? `L${-row.streak}` : '—'}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </JumboPanel>
+        </Sheet>
 
         <div className="flex flex-col gap-4">
           {latest ? (
             <ScoreboardPanel match={match} result={latest} />
           ) : (
-            <JumboPanel>
-              <p className="py-10 text-center font-led text-sm tracking-[0.3em] text-mist">THE SEASON AWAITS…</p>
-            </JumboPanel>
+            <Sheet>
+              <p className="plate py-10 text-center !text-[10px]">THE SEASON AWAITS…</p>
+            </Sheet>
           )}
           {canControl && (
             <div className="flex flex-wrap justify-center gap-3">
-              <NeonButton onClick={() => dispatch({ type: 'SIM_NEXT' })} disabled={autoSimming}>
+              <Btn primary onClick={() => dispatch({ type: 'SIM_NEXT' })} disabled={autoSimming}>
                 SIM NEXT GAME
-              </NeonButton>
-              <NeonButton color="ember" onClick={simAllRemaining}>
-                {autoSimming ? '■ STOP' : '▶▶ SIM THE REST'}
-              </NeonButton>
+              </Btn>
+              <Btn onClick={simAllRemaining}>{autoSimming ? '■ STOP' : '▶▶ SIM THE REST'}</Btn>
             </div>
           )}
         </div>
@@ -165,26 +163,26 @@ export function SeasonScreen({ match }: { match: MatchState }) {
 function SeriesCard({ match, matchup }: { match: MatchState; matchup: PlayoffMatchup }) {
   const teams = [matchup.higherId, matchup.lowerId]
   return (
-    <div className={`rounded-xl border p-3 ${matchup.winnerId ? 'border-gold/50 bg-gold/5' : 'border-bezel bg-panel-deep'}`}>
+    <div className={`border p-3 ${matchup.winnerId ? 'border-line bg-paper2' : 'border-line'}`}>
       {teams.map((id) => {
         const wins = matchup.tally[id]
         const isWinner = matchup.winnerId === id
         return (
           <div key={id} className="flex items-center gap-2 py-1">
-            <TeamBadge name={entryName(match, id)} index={entryIndex(match, id)} size={24} />
-            <span className={`min-w-0 flex-1 truncate text-sm font-semibold ${isWinner ? 'text-gold' : ''}`}>
+            <TeamMark name={entryName(match, id)} size={22} />
+            <span className={`min-w-0 flex-1 truncate text-[13px] font-semibold ${isWinner ? 'text-ink' : 'text-dim'}`}>
               {entryName(match, id)}
             </span>
             <span className="flex gap-1">
               {Array.from({ length: 4 }, (_, i) => (
-                <span key={i} className={`h-2 w-2 rounded-full ${i < wins ? 'bg-neon shadow-[0_0_6px_rgba(255,179,0,0.8)]' : 'bg-bezel'}`} />
+                <span key={i} className={`h-1.5 w-1.5 ${i < wins ? 'bg-hot' : 'border border-line'}`} />
               ))}
             </span>
           </div>
         )
       })}
       {matchup.winnerId && (
-        <p className="mt-1 text-center font-led text-[9px] tracking-[0.25em] text-gold">
+        <p className="plate plate-faint mt-1 text-center !text-[8.5px]">
           SERIES {matchup.tally[matchup.winnerId]}-{matchup.tally[matchup.winnerId === matchup.higherId ? matchup.lowerId : matchup.higherId]}
         </p>
       )}
@@ -201,7 +199,7 @@ export function PlayoffsScreen({ match }: { match: MatchState }) {
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-4 px-3 py-5">
-      <LedTicker
+      <StatusLine
         text={`${activeRound.name} · ${
           activeMatchup
             ? `${entryName(match, activeMatchup.higherId)} VS ${entryName(match, activeMatchup.lowerId)} · GAME ${activeMatchup.games.length + 1}`
@@ -209,16 +207,16 @@ export function PlayoffsScreen({ match }: { match: MatchState }) {
         }`}
       />
 
-      <div className="grid gap-4 md:grid-cols-[280px_1fr]">
+      <div className="grid gap-4 md:grid-cols-[270px_1fr]">
         <div className="flex flex-col gap-3">
           {match.playoffRounds.map((round) => (
-            <JumboPanel key={round.name} title={round.name}>
+            <Sheet key={round.name} title={round.name}>
               <div className="grid gap-2">
                 {round.matchups.map((m, i) => (
                   <SeriesCard key={i} match={match} matchup={m} />
                 ))}
               </div>
-            </JumboPanel>
+            </Sheet>
           ))}
         </div>
 
@@ -226,18 +224,16 @@ export function PlayoffsScreen({ match }: { match: MatchState }) {
           {latest ? (
             <ScoreboardPanel match={match} result={latest} />
           ) : (
-            <JumboPanel>
-              <p className="py-10 text-center font-led text-sm tracking-[0.3em] text-mist">THE BRACKET IS SET…</p>
-            </JumboPanel>
+            <Sheet>
+              <p className="plate py-10 text-center !text-[10px]">THE BRACKET IS SET…</p>
+            </Sheet>
           )}
           {canControl && (
             <div className="flex flex-wrap justify-center gap-3">
-              <NeonButton onClick={() => dispatch({ type: 'SIM_NEXT' })} disabled={autoSimming}>
+              <Btn primary onClick={() => dispatch({ type: 'SIM_NEXT' })} disabled={autoSimming}>
                 SIM NEXT GAME
-              </NeonButton>
-              <NeonButton color="ember" onClick={simAllRemaining}>
-                {autoSimming ? '■ STOP' : '▶▶ SIM THE REST'}
-              </NeonButton>
+              </Btn>
+              <Btn onClick={simAllRemaining}>{autoSimming ? '■ STOP' : '▶▶ SIM THE REST'}</Btn>
             </div>
           )}
         </div>
@@ -248,61 +244,47 @@ export function PlayoffsScreen({ match }: { match: MatchState }) {
 
 // --------------------------------------------------------------- champion
 
-const CONFETTI_COLORS = ['#ffd45c', '#ffb300', '#ff4d2e', '#4dd8ff', '#c77dff', '#f4f2ec']
-
 export function ChampionScreen({ match }: { match: MatchState }) {
   const { myId, goHome } = useGame()
   const champion = match.entries.find((e) => e.id === match.championId)
   const itsMe = match.championId === myId
 
   return (
-    <div className="relative mx-auto flex min-h-screen w-full max-w-2xl flex-col items-center justify-center gap-6 overflow-hidden px-4 py-10 text-center">
-      {Array.from({ length: 60 }, (_, i) => (
-        <span
-          key={i}
-          className="animate-confetti pointer-events-none absolute top-0 block"
-          style={{
-            left: `${(i * 137.5) % 100}%`,
-            width: 7,
-            height: 13,
-            background: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-            animationDelay: `${(i % 20) * 0.16}s`,
-            animationDuration: `${2.6 + (i % 5) * 0.4}s`,
-          }}
-        />
-      ))}
+    <div className="relative mx-auto flex min-h-screen w-full max-w-2xl flex-col items-center justify-center gap-7 overflow-hidden px-4 py-10 text-center">
+      <PenStrokes />
 
-      <p className="font-led text-xs font-bold tracking-[0.5em] text-mist">AND YOUR CHAMPION IS</p>
+      <p className="plate animate-rise">AND YOUR CHAMPION IS</p>
 
-      <div
-        className="flex h-40 w-40 items-center justify-center rounded-full"
-        style={{
-          background: 'radial-gradient(circle at 35% 30%, #fff3c4, #ffd45c 35%, #b8860b 75%, #6b4e00)',
-          boxShadow: '0 0 60px rgba(255, 212, 92, 0.55), inset 0 -6px 18px rgba(0,0,0,0.4)',
-        }}
-      >
-        <div className="flex h-24 w-24 items-center justify-center rounded-full bg-arena font-display text-5xl">
-          🏆
-        </div>
+      <div className="animate-rise relative" style={{ animationDelay: '150ms' }}>
+        <RingSeal size={168} strokeWidth={7} />
+        <span className="num absolute inset-0 flex items-center justify-center text-4xl">🏆</span>
       </div>
 
-      <h1 className="neon-text font-display text-6xl leading-none tracking-wide sm:text-7xl">{champion?.name}</h1>
-      {itsMe && <p className="font-led text-lg font-black tracking-[0.3em] text-gold">YOU GOT THE RING! 💍</p>}
+      <h1 className="headline animate-rise text-6xl leading-none text-ink sm:text-7xl" style={{ animationDelay: '350ms' }}>
+        {champion?.name}
+      </h1>
+      {itsMe && (
+        <p className="plate animate-rise !text-[11px] !tracking-[0.3em] text-gold" style={{ animationDelay: '500ms' }}>
+          YOU GOT THE RING
+        </p>
+      )}
 
-      <div className="grid w-full gap-2">
+      <div className="animate-rise grid w-full gap-1.5" style={{ animationDelay: '600ms' }}>
         {match.finalsMvp && (
-          <p className="font-led text-[11px] tracking-[0.25em] text-ice">
+          <p className="plate !text-[9.5px]">
             FINALS MVP: {match.finalsMvp.name.toUpperCase()} · {match.finalsMvp.statLine}
           </p>
         )}
         {match.seasonMvp && (
-          <p className="font-led text-[11px] tracking-[0.25em] text-superstar">
+          <p className="plate plate-faint !text-[9.5px]">
             SEASON MVP: {match.seasonMvp.name.toUpperCase()} · {match.seasonMvp.statLine}
           </p>
         )}
       </div>
 
-      <NeonButton onClick={goHome}>RUN IT BACK →</NeonButton>
+      <Btn primary onClick={goHome} className="animate-rise" >
+        RUN IT BACK →
+      </Btn>
     </div>
   )
 }
@@ -313,33 +295,29 @@ export function TrophiesScreen() {
   const { trophies, goHome } = useGame()
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-xl flex-col justify-center gap-5 px-4 py-10">
-      <h1 className="text-center font-display text-4xl tracking-wide text-chalk">🏆 TROPHY CASE</h1>
-      <JumboPanel>
+      <h1 className="headline animate-rise text-center text-3xl text-ink">TROPHY CASE</h1>
+      <Sheet className="animate-rise" pad={false} title={`RINGS ON RECORD · ${trophies.length}`}>
         {trophies.length === 0 ? (
-          <p className="py-8 text-center font-led text-xs tracking-[0.3em] text-mist">NO RINGS YET. GO CHASE ONE.</p>
+          <p className="plate cell py-8 text-center !text-[10px]">NO RINGS YET. GO CHASE ONE.</p>
         ) : (
-          <ul className="grid gap-2">
-            {trophies.map((t) => (
-              <li key={t.id} className="flex items-center justify-between rounded-lg border border-bezel bg-panel-deep px-4 py-2.5">
-                <span>
-                  <span className={`block font-display text-lg tracking-wide ${t.championWasMe ? 'text-gold' : 'text-chalk'}`}>
-                    {t.championName} {t.championWasMe && '💍'}
-                  </span>
-                  <span className="font-led text-[9px] tracking-widest text-mist">
-                    {new Date(t.wonAt).toLocaleDateString()} · {t.format.toUpperCase()} · {t.leagueSize} TEAMS
-                    {t.finalsMvpName ? ` · FMVP ${t.finalsMvpName.toUpperCase()}` : ''}
-                  </span>
+          trophies.map((t) => (
+            <div key={t.id} className="cell flex items-center justify-between !py-3">
+              <span>
+                <span className={`headline block text-base ${t.championWasMe ? 'gold' : 'text-ink'}`}>
+                  {t.championName}
                 </span>
-                <span className="text-2xl">🏆</span>
-              </li>
-            ))}
-          </ul>
+                <span className="plate plate-faint !text-[8.5px]">
+                  {new Date(t.wonAt).toLocaleDateString()} · {t.format.toUpperCase()} · {t.leagueSize} TEAMS
+                  {t.finalsMvpName ? ` · FMVP ${t.finalsMvpName.toUpperCase()}` : ''}
+                </span>
+              </span>
+              <span className={`num text-lg ${t.championWasMe ? 'gold' : 'text-faint'}`}>●</span>
+            </div>
+          ))
         )}
-      </JumboPanel>
+      </Sheet>
       <div className="flex justify-center">
-        <NeonButton color="steel" onClick={goHome}>
-          BACK
-        </NeonButton>
+        <Btn onClick={goHome}>BACK</Btn>
       </div>
     </div>
   )

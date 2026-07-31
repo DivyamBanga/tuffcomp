@@ -2,72 +2,75 @@ import { useState, type ReactNode } from 'react'
 import type { Card } from '../types'
 import { headshotUrl } from '../types'
 
-// ------------------------------------------------------------- LED ticker
+// ------------------------------------------------------------- statusline
 
-export function LedTicker({ text }: { text: string }) {
-  const repeated = `${text} · `.repeat(6)
+// Thin annotation bar with a plotter-head caret.
+export function StatusLine({ text, className = '' }: { text: string; className?: string }) {
   return (
-    <div className="led-strip overflow-hidden py-1.5">
-      <div className="animate-marquee flex w-max whitespace-nowrap font-led text-[11px] font-bold tracking-[0.35em] text-neon/90">
-        <span>{repeated}</span>
-        <span>{repeated}</span>
-      </div>
+    <div className={`statusline ${className}`}>
+      <span className="caret" />
+      <span className="min-w-0 truncate">{text}</span>
     </div>
   )
 }
 
-// ------------------------------------------------------------ arcade bits
+// ------------------------------------------------------------ sheet bits
 
-export function NeonButton({
+export function Sheet({
+  title,
+  right,
+  children,
+  className = '',
+  pad = true,
+}: {
+  title?: string
+  right?: ReactNode
+  children: ReactNode
+  className?: string
+  pad?: boolean
+}) {
+  return (
+    <section className={`sheet ${className}`}>
+      {title !== undefined && (
+        <header className="flex items-center justify-between gap-3 border-b border-line px-[18px] py-2.5">
+          <h2 className="plate">{title}</h2>
+          {right}
+        </header>
+      )}
+      <div className={pad ? 'cell' : ''}>{children}</div>
+    </section>
+  )
+}
+
+export function Btn({
   children,
   onClick,
   disabled,
-  color = 'neon',
+  primary,
+  on,
   className = '',
 }: {
   children: ReactNode
   onClick?: () => void
   disabled?: boolean
-  color?: 'neon' | 'ember' | 'ice' | 'steel'
+  primary?: boolean
+  on?: boolean
   className?: string
 }) {
-  const palette: Record<string, string> = {
-    neon: 'bg-neon text-arena',
-    ember: 'bg-ember text-chalk',
-    ice: 'bg-ice text-arena',
-    steel: 'bg-bezel text-chalk',
-  }
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`btn-arcade px-6 py-3 text-xl ${palette[color]} ${className}`}
+      className={`btn ${primary ? 'btn-primary' : ''} ${on ? 'btn-on' : ''} ${className}`}
     >
       {children}
     </button>
   )
 }
 
-export function JumboPanel({ title, right, children, className = '' }: { title?: string; right?: ReactNode; children: ReactNode; className?: string }) {
-  return (
-    <section className={`bezel scanlines overflow-hidden ${className}`}>
-      {title && (
-        <header className="flex items-center justify-between gap-3 border-b border-bezel bg-panel-deep px-4 py-2">
-          <h2 className="font-display text-lg tracking-[0.12em] text-chalk/90">{title}</h2>
-          {right}
-        </header>
-      )}
-      <div className="p-4">{children}</div>
-    </section>
-  )
-}
-
-// Initials medallion for a team (used in standings, brackets, scoreboards).
-const BADGE_HUES = [28, 200, 275, 120, 350, 45, 170, 320]
-
-export function TeamBadge({ name, index, size = 34 }: { name: string; index: number; size?: number }) {
-  const hue = BADGE_HUES[index % BADGE_HUES.length]
+// Monochrome team mark: hairline circle, initials in mono.
+export function TeamMark({ name, size = 30, gold = false }: { name: string; size?: number; gold?: boolean }) {
   const initials = name
     .split(/\s+/)
     .map((w) => w[0])
@@ -76,14 +79,10 @@ export function TeamBadge({ name, index, size = 34 }: { name: string; index: num
     .toUpperCase()
   return (
     <span
-      className="inline-flex shrink-0 items-center justify-center rounded-full font-display text-arena"
-      style={{
-        width: size,
-        height: size,
-        fontSize: size * 0.42,
-        background: `linear-gradient(150deg, hsl(${hue} 90% 62%), hsl(${hue} 85% 42%))`,
-        boxShadow: `0 0 12px -2px hsl(${hue} 90% 55% / 0.55)`,
-      }}
+      className={`num inline-flex shrink-0 items-center justify-center rounded-full border ${
+        gold ? 'border-gold text-gold' : 'border-line text-dim'
+      }`}
+      style={{ width: size, height: size, fontSize: size * 0.34 }}
     >
       {initials}
     </span>
@@ -103,7 +102,7 @@ export function Headshot({ card, className = '' }: { card: Card; className?: str
       .slice(0, 2)
       .toUpperCase()
     return (
-      <div className={`flex items-center justify-center bg-panel-deep font-display text-3xl text-mist ${className}`}>
+      <div className={`num flex items-center justify-center bg-paper2 text-xl text-faint ${className}`}>
         {initials}
       </div>
     )
@@ -138,28 +137,30 @@ export function PlayerCard({
       onClick={onClick}
       disabled={!onClick}
       style={{ animationDelay: `${delayMs}ms` }}
-      className={`foil-${card.tier} animate-card-in relative w-40 shrink-0 overflow-hidden rounded-xl border text-left transition-transform sm:w-44 ${
-        onClick ? 'cursor-pointer hover:-translate-y-1' : ''
-      } ${selected ? 'ring-4 ring-neon' : ''} ${dimmed ? 'opacity-40 grayscale' : ''}`}
+      className={`pcard pcard-${card.tier} animate-deal relative w-40 shrink-0 sm:w-44 ${
+        onClick ? 'pcard-take' : ''
+      } ${selected ? 'gold-line' : ''} ${dimmed ? 'opacity-35 grayscale' : ''}`}
     >
-      <div className="flex items-start justify-between px-2.5 pt-2">
-        <span className={`font-led text-[10px] font-bold tracking-[0.22em] text-tier-${card.tier}`}>{card.tier}</span>
-        <span className="text-right">
-          <span className="block font-led text-2xl font-black leading-none text-chalk">{card.ovr}</span>
-          <span className="block font-led text-[9px] tracking-widest text-mist">OVR</span>
+      <div className="flex items-baseline justify-between px-2.5 pt-2 pb-1.5">
+        <span className={`plate !text-[9px] ${card.tier === 'GOAT' ? 'gold' : ''}`}>{card.tier}</span>
+        <span className="num text-xl leading-none text-ink">
+          {card.ovr}
+          <span className="ml-0.5 text-[9px] text-faint">OVR</span>
         </span>
       </div>
-      <Headshot card={card} className="mx-auto mt-1 h-24 w-32 rounded-md sm:h-28" />
-      <div className="px-2.5 pb-2.5 pt-1.5">
-        <p className="truncate font-display text-base leading-tight tracking-wide text-chalk">{card.name}</p>
-        <p className="font-led text-[10px] tracking-widest text-mist">
+      <div className="photo-well border-t border-line">
+        <Headshot card={card} className="h-24 w-full sm:h-28" />
+      </div>
+      <div className="px-2.5 pb-2.5 pt-2">
+        <p className="headline truncate text-[13px] leading-tight text-ink">{card.name}</p>
+        <p className="plate plate-faint mt-1 !text-[9px]">
           '{String(card.season).slice(2)} {card.teams[0]} · {card.pos}
           {card.hof ? ' · HOF' : ''}
         </p>
-        <div className="mt-1.5 flex justify-between font-led text-[10px] text-chalk/80">
-          <span>{card.stats.pts.toFixed(1)} P</span>
-          <span>{card.stats.reb.toFixed(1)} R</span>
-          <span>{card.stats.ast.toFixed(1)} A</span>
+        <div className="num mt-1.5 flex justify-between text-[10px] text-dim">
+          <span>{card.stats.pts.toFixed(1)}p</span>
+          <span>{card.stats.reb.toFixed(1)}r</span>
+          <span>{card.stats.ast.toFixed(1)}a</span>
         </div>
       </div>
     </button>
@@ -167,58 +168,114 @@ export function PlayerCard({
 }
 
 // Tiny chip for roster strips.
-export function MiniCard({ card, label, onClick, highlight }: { card: Card | null; label: string; onClick?: () => void; highlight?: boolean }) {
+export function MiniCard({
+  card,
+  label,
+  onClick,
+  highlight,
+}: {
+  card: Card | null
+  label: string
+  onClick?: () => void
+  highlight?: boolean
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={!onClick}
-      className={`flex min-w-0 items-center gap-1.5 rounded-lg border px-1.5 py-1 text-left ${
-        highlight ? 'border-neon bg-neon/10' : 'border-bezel bg-panel-deep'
-      } ${onClick ? 'cursor-pointer hover:border-chalk/40' : ''}`}
+      className={`flex min-w-0 items-center gap-1.5 border px-1.5 py-1 text-left transition-colors ${
+        highlight ? 'border-hot bg-paper2' : 'border-line bg-paper'
+      } ${onClick ? 'cursor-pointer hover:border-hot' : ''}`}
     >
-      <span className="w-6 shrink-0 font-led text-[9px] font-bold tracking-wider text-mist">{label}</span>
+      <span className="plate plate-faint w-5 shrink-0 !text-[8.5px]">{label}</span>
       {card ? (
         <>
           <Headshot card={card} className="h-6 w-6 shrink-0 rounded-full" />
           <span className="min-w-0">
-            <span className="block max-w-24 truncate text-[11px] font-semibold leading-tight">{card.name.split(' ').at(-1)}</span>
-            <span className={`block font-led text-[9px] leading-tight text-tier-${card.tier}`}>{card.ovr}</span>
+            <span className="block max-w-24 truncate text-[11px] font-semibold leading-tight text-ink">
+              {card.name.split(' ').at(-1)}
+            </span>
+            <span className={`num block text-[9px] leading-tight ${card.tier === 'GOAT' ? 'gold' : 'text-dim'}`}>
+              {card.ovr}
+            </span>
           </span>
         </>
       ) : (
-        <span className="text-[11px] text-mist">—</span>
+        <span className="text-[11px] text-faint">—</span>
       )}
     </button>
   )
 }
 
-// LED score readout.
-export function LedScore({ value, accent = false, size = 'text-4xl' }: { value: number | string; accent?: boolean; size?: string }) {
+// Mono score readout that ticks when the value changes.
+export function NumTick({ value, gold = false, size = 'text-3xl' }: { value: number | string; gold?: boolean; size?: string }) {
   return (
-    <span key={String(value)} className={`animate-count-pop inline-block font-led font-black ${size} ${accent ? 'neon-text' : 'text-chalk'}`}>
+    <span key={String(value)} className={`num animate-tick inline-block font-bold ${size} ${gold ? 'gold' : 'text-ink'}`}>
       {value}
     </span>
   )
 }
 
-export function PowerMeter({ value, label }: { value: number; label: string }) {
+export function Meter({ value, label }: { value: number; label: string }) {
   return (
     <div>
-      <div className="mb-1 flex justify-between font-led text-[10px] tracking-widest text-mist">
-        <span>{label}</span>
-        <span className="text-chalk">{value}</span>
+      <div className="mb-1 flex items-baseline justify-between">
+        <span className="plate !text-[9px]">{label}</span>
+        <span className="num text-xs text-ink">{value}</span>
       </div>
-      <div className="led-strip h-3 overflow-hidden rounded-sm">
+      <div className="h-[3px] border border-line">
         <div
-          className="h-full rounded-sm transition-all duration-700"
-          style={{
-            width: `${value}%`,
-            background: 'linear-gradient(90deg, #ff4d2e, #ffb300 55%, #ffd45c)',
-            boxShadow: '0 0 12px rgba(255, 179, 0, 0.7)',
-          }}
+          className="h-full bg-ink transition-all duration-700"
+          style={{ width: `${value}%`, transitionTimingFunction: 'var(--ease-draft)' }}
         />
       </div>
     </div>
+  )
+}
+
+// A gold ring that draws itself - the game's seal.
+export function RingSeal({ size = 120, strokeWidth = 5, className = '' }: { size?: number; strokeWidth?: number; className?: string }) {
+  const r = (size - strokeWidth) / 2
+  const c = 2 * Math.PI * r
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className={className} aria-hidden>
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke="var(--color-gold)"
+        strokeWidth={strokeWidth}
+        strokeDasharray={c}
+        strokeLinecap="round"
+        className="ring-draw"
+        style={{ '--ring-c': c, transform: 'rotate(-90deg)', transformOrigin: 'center' } as React.CSSProperties}
+      />
+    </svg>
+  )
+}
+
+// Champion confetti: falling pen strokes in ink and gold.
+const STROKE_COLORS = ['var(--color-gold)', 'var(--color-hot)', 'var(--color-gold)', 'var(--color-dim)']
+
+export function PenStrokes({ count = 56 }: { count?: number }) {
+  return (
+    <>
+      {Array.from({ length: count }, (_, i) => (
+        <span
+          key={i}
+          className="animate-strokes pointer-events-none absolute top-0 block"
+          style={{
+            left: `${(i * 137.5) % 100}%`,
+            width: 2,
+            height: 12,
+            background: STROKE_COLORS[i % STROKE_COLORS.length],
+            animationDelay: `${(i % 20) * 0.17}s`,
+            animationDuration: `${2.8 + (i % 5) * 0.45}s`,
+          }}
+        />
+      ))}
+    </>
   )
 }
