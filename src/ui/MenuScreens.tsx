@@ -90,11 +90,33 @@ export function SetupScreen() {
             active={config.mode === 'tiers'}
             n="A"
             title="TIERED SPINS"
-            tag="FAIR & EVEN"
+            tag="CLASSIC"
             body="Everyone climbs the same rarity ladder. Round 1 guarantees a star. Last round is a jackpot wildcard."
             onClick={() => setConfig({ mode: 'tiers' })}
           />
+          <ModeCell
+            active={config.mode === 'themes'}
+            n="B"
+            title="THEME DRAFT"
+            tag="KNOW YOUR HOOPS"
+            body="Every round deals a theme - Lakers only, 40% from deep, MVPs only. Name your pick from memory, best fitting season lands."
+            onClick={() => setConfig({ mode: 'themes' })}
+          />
         </div>
+        {config.mode === 'themes' && (
+          <div className="cell flex flex-wrap items-center gap-3 border-t border-line">
+            <span className="plate !text-[9px]">PICK STYLE</span>
+            <Btn on={(config.input ?? 'type') === 'type'} onClick={() => setConfig({ input: 'type' })} className="!px-3.5 !py-1.5">
+              TYPE-IN · HARD
+            </Btn>
+            <Btn on={config.input === 'grid'} onClick={() => setConfig({ input: 'grid' })} className="!px-3.5 !py-1.5">
+              GRID · EASY
+            </Btn>
+            <span className="plate plate-faint !text-[8.5px]">
+              {config.input === 'grid' ? 'CHOOSE FROM A BOARD OF FITS' : '3 STRIKES, THEN THE BOARD BAILS YOU OUT'}
+            </span>
+          </div>
+        )}
       </Sheet>
 
       <Sheet className="animate-rise" pad={false} title="COMPETITION" >

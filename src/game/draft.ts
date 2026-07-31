@@ -9,10 +9,15 @@ import {
   type SlotId,
 } from '../engine/lineup'
 import { hashSeed, mulberry32, shuffle, type Rng } from '../engine/prng'
+import { pickThemeRounds, resolveTypedPick, themeById } from './themes'
 
 // ---------------------------------------------------------------- config
 
-export type DraftMode = 'tiers'
+export type DraftMode = 'tiers' | 'themes'
+
+// Theme mode pick style (lobby-wide, so the competition stays fair):
+// 'type' - name your player blind from memory; 'grid' - choose from a board.
+export type PickInput = 'type' | 'grid'
 
 export interface DraftPlayer {
   id: string
@@ -23,6 +28,8 @@ export interface DraftPlayer {
 export const ROUNDS = 8
 export const REROLLS_PER_PLAYER = 2
 export const OFFER_SIZE = 4
+export const STRIKES_PER_PLAYER = 3
+const THEME_OFFER_SIZE = 12
 
 // Every player gets the same round ladder, so teams stay even: a guaranteed
 // star early, solid starters in the middle, and a jackpot WILDCARD finish
@@ -57,21 +64,49 @@ export interface Offer {
   tier: Tier | null
   forPlayerId: string
   round: number
+  // Theme mode only: the theme couldn't fill this drafter's forced starter
+  // needs, so the board opened up beyond the theme.
+  themeFallback?: boolean
 }
 
 export interface TeamState {
   playerId: string
   roster: Roster
   rerollsLeft: number
+  strikesLeft: number
+}
+
+export type TypeOutcome = 'no-match' | 'off-theme' | 'taken' | 'cant-fit'
+
+// Feedback from the last typed attempt - broadcast so everyone enjoys the
+// whiffs ("Jordan was never a Laker").
+export interface TypeFeedback {
+  playerId: string
+  query: string
+  outcome: TypeOutcome
+  matchedName: string | null
+  attempt: number
+}
+
+export interface PickSummary {
+  playerId: string
+  name: string
+  season: number
+  ovr: number
+  tier: Tier
 }
 
 export interface DraftState {
   mode: DraftMode
+  input: PickInput
   players: DraftPlayer[]
   teams: Record<string, TeamState>
   order: string[] // snake pick sequence, ROUNDS * players long
   pickIndex: number
   offer: Offer | null
+  themeRounds: string[] // theme ids, one per round (themes mode only)
+  lastType: TypeFeedback | null
+  lastPick: PickSummary | null
   draftedPids: string[] // one real person per league, regardless of season
   seed: number
   spinCount: number
@@ -84,6 +119,7 @@ export interface DraftCtx {
 
 export type DraftAction =
   | { type: 'TAKE'; playerId: string; cardId: string }
+  | { type: 'TYPE_PICK'; playerId: string; query: string }
   | { type: 'REROLL'; playerId: string }
   | { type: 'MOVE'; playerId: string; from: SlotId; to: SlotId }
 
@@ -98,12 +134,22 @@ function snakeOrder(playerIds: string[], rounds: number): string[] {
   return order
 }
 
-export function initDraft(mode: DraftMode, players: DraftPlayer[], seed: number, ctx: DraftCtx): DraftState {
+export function initDraft(
+  mode: DraftMode,
+  players: DraftPlayer[],
+  seed: number,
+  ctx: DraftCtx,
+  input: PickInput = 'type',
+): DraftState {
   const state: DraftState = {
     mode,
+    input,
     players,
     teams: Object.fromEntries(
-      players.map((p) => [p.id, { playerId: p.id, roster: emptyRoster(), rerollsLeft: REROLLS_PER_PLAYER }]),
+      players.map((p) => [
+        p.id,
+        { playerId: p.id, roster: emptyRoster(), rerollsLeft: REROLLS_PER_PLAYER, strikesLeft: STRIKES_PER_PLAYER },
+      ]),
     ),
     order: snakeOrder(
       players.map((p) => p.id),
@@ -111,6 +157,9 @@ export function initDraft(mode: DraftMode, players: DraftPlayer[], seed: number,
     ),
     pickIndex: 0,
     offer: null,
+    themeRounds: mode === 'themes' ? pickThemeRounds(ctx.pool, players.length, seed, ROUNDS) : [],
+    lastType: null,
+    lastPick: null,
     draftedPids: [],
     seed,
     spinCount: 0,
@@ -209,9 +258,58 @@ function tierOffer(state: DraftState, ctx: DraftCtx, rng: Rng, playerId: string,
   return { cards, tier, forPlayerId: playerId, round }
 }
 
-function generateOffer(state: DraftState, ctx: DraftCtx): Offer {
+// Deterministic season ranking: best overall, then the later year.
+function betterSeason(a: Card, b: Card): boolean {
+  return a.ovr !== b.ovr ? a.ovr > b.ovr : a.season !== b.season ? a.season > b.season : a.id < b.id
+}
+
+function bestSeasonPerPerson(cards: Card[]): Card[] {
+  const byPid = new Map<string, Card>()
+  for (const c of cards) {
+    const cur = byPid.get(c.pid)
+    if (!cur || betterSeason(c, cur)) byPid.set(c.pid, c)
+  }
+  return [...byPid.values()]
+}
+
+// Cards the current drafter could legally use this pick under the round's
+// theme (empty when the theme has dried up for their needs).
+function themeUsableCards(state: DraftState, ctx: DraftCtx, playerId: string, round: number): Card[] {
+  const theme = themeById(state.themeRounds[round - 1])
+  const roster = state.teams[playerId].roster
+  const constrain = mustFillStarter(state, playerId)
+  const eligible = availableCards(state, ctx).filter(theme.test)
+  return constrain ? eligible.filter((c) => fillsOpenStarter(c, roster)) : eligible
+}
+
+// Theme mode board. Returns null when the drafter should be typing instead:
+// hard mode with strikes still in hand and a live theme. The board appears
+// for grid lobbies, drafters out of strikes, and dried-up themes (fallback
+// opens past the theme so nobody softlocks).
+function themeOffer(state: DraftState, ctx: DraftCtx, playerId: string, round: number): Offer | null {
+  const team = state.teams[playerId]
+  const usable = themeUsableCards(state, ctx, playerId, round)
+  const fallback = usable.length === 0
+  const gridNeeded = state.input === 'grid' || team.strikesLeft <= 0 || fallback
+  if (!gridNeeded) return null
+
+  let pool = usable
+  if (fallback) {
+    const available = availableCards(state, ctx)
+    const constrain = mustFillStarter(state, playerId)
+    pool = constrain ? available.filter((c) => fillsOpenStarter(c, team.roster)) : available
+  }
+
+  const cards = bestSeasonPerPerson(pool)
+    .sort((a, b) => (betterSeason(a, b) ? -1 : 1))
+    .slice(0, THEME_OFFER_SIZE)
+  return { cards, tier: null, forPlayerId: playerId, round, ...(fallback ? { themeFallback: true } : {}) }
+}
+
+function generateOffer(state: DraftState, ctx: DraftCtx): Offer | null {
   const playerId = state.order[state.pickIndex]
   const round = currentRound(state)
+  if (state.mode === 'themes') return themeOffer(state, ctx, playerId, round)
   const rng = mulberry32(hashSeed(`${state.seed}:${state.spinCount}`))
   return tierOffer(state, ctx, rng, playerId, round)
 }
@@ -249,11 +347,47 @@ export function applyAction(state: DraftState, action: DraftAction, ctx: DraftCt
     return { ...state, teams: { ...state.teams, [action.playerId]: { ...team, roster } } }
   }
 
-  if (state.done || !state.offer) return state
+  if (state.done) return state
   const turnPlayerId = currentPlayerId(state)
   if (action.playerId !== turnPlayerId) return state
 
+  if (action.type === 'TYPE_PICK') {
+    if (state.mode !== 'themes' || state.offer !== null) return state
+    const round = currentRound(state)
+    const theme = themeById(state.themeRounds[round - 1])
+    const team = state.teams[action.playerId]
+    const attempt = (state.lastType?.attempt ?? 0) + 1
+
+    // A whiff: record feedback, maybe burn a strike, and open the board
+    // once the drafter is out of strikes.
+    const miss = (outcome: TypeOutcome, matchedName: string | null, strike: boolean): DraftState => {
+      const strikesLeft = strike ? team.strikesLeft - 1 : team.strikesLeft
+      const next: DraftState = {
+        ...state,
+        teams: { ...state.teams, [action.playerId]: { ...team, strikesLeft } },
+        lastType: { playerId: action.playerId, query: action.query, outcome, matchedName, attempt },
+      }
+      return strikesLeft <= 0 ? { ...next, offer: generateOffer(next, ctx) } : next
+    }
+
+    const resolved = resolveTypedPick(ctx.pool, action.query)
+    if (!resolved) return miss('no-match', null, false)
+    if (state.draftedPids.includes(resolved.pid)) return miss('taken', resolved.name, true)
+    const eligible = ctx.pool.filter((c) => c.pid === resolved.pid && theme.test(c))
+    if (eligible.length === 0) return miss('off-theme', resolved.name, true)
+    const forceStarter = mustFillStarter(state, action.playerId)
+    const usable = forceStarter ? eligible.filter((c) => fillsOpenStarter(c, team.roster)) : eligible
+    if (usable.length === 0) return miss('cant-fit', resolved.name, true)
+
+    // The pick lands as that player's best season passing the theme.
+    const card = usable.reduce((a, b) => (betterSeason(b, a) ? b : a))
+    return commitPick(state, action.playerId, card, ctx)
+  }
+
+  if (!state.offer) return state
+
   if (action.type === 'REROLL') {
+    if (state.mode === 'themes') return state
     const team = state.teams[action.playerId]
     if (team.rerollsLeft <= 0) return state
     const next: DraftState = {
@@ -267,26 +401,33 @@ export function applyAction(state: DraftState, action: DraftAction, ctx: DraftCt
   if (action.type === 'TAKE') {
     const card = state.offer.cards.find((c) => c.id === action.cardId)
     if (!card) return state
-    const team = state.teams[action.playerId]
-    const forceStarter = mustFillStarter(state, action.playerId)
-    const slot = autoPlace(team.roster, card, forceStarter)
-    const roster: Roster = { ...team.roster, [slot]: card }
-
-    const pickIndex = state.pickIndex + 1
-    const done = pickIndex >= state.order.length
-    const next: DraftState = {
-      ...state,
-      teams: { ...state.teams, [action.playerId]: { ...team, roster } },
-      draftedPids: [...state.draftedPids, card.pid],
-      pickIndex,
-      spinCount: state.spinCount + 1,
-      offer: null,
-      done,
-    }
-    return done ? next : { ...next, offer: generateOffer(next, ctx) }
+    return commitPick(state, action.playerId, card, ctx)
   }
 
   return state
+}
+
+// Shared landing for every successful pick, typed or tapped.
+function commitPick(state: DraftState, playerId: string, card: Card, ctx: DraftCtx): DraftState {
+  const team = state.teams[playerId]
+  const forceStarter = mustFillStarter(state, playerId)
+  const slot = autoPlace(team.roster, card, forceStarter)
+  const roster: Roster = { ...team.roster, [slot]: card }
+
+  const pickIndex = state.pickIndex + 1
+  const done = pickIndex >= state.order.length
+  const next: DraftState = {
+    ...state,
+    teams: { ...state.teams, [playerId]: { ...team, roster } },
+    draftedPids: [...state.draftedPids, card.pid],
+    pickIndex,
+    spinCount: state.spinCount + 1,
+    offer: null,
+    lastType: null,
+    lastPick: { playerId, name: card.name, season: card.season, ovr: card.ovr, tier: card.tier },
+    done,
+  }
+  return done ? next : { ...next, offer: generateOffer(next, ctx) }
 }
 
 // ------------------------------------------------------------------- CPU
@@ -306,6 +447,25 @@ export function cpuChoose(state: DraftState): DraftAction {
   return { type: 'TAKE', playerId, cardId: scored[0].card.id }
 }
 
+// Theme mode CPU: with a board up, tap it like anyone else; otherwise
+// "type" a name it knows fits. Only names that resolve round-trip to the
+// intended person are considered, so the CPU never burns a strike.
+function cpuChooseTheme(state: DraftState, ctx: DraftCtx): DraftAction {
+  const playerId = currentPlayerId(state)!
+  if (state.offer) return cpuChoose(state)
+  const roster = state.teams[playerId].roster
+  const raw = bestSeasonPerPerson(themeUsableCards(state, ctx, playerId, currentRound(state)))
+  const roundTrips = raw.filter((card) => resolveTypedPick(ctx.pool, card.name)?.pid === card.pid)
+  const usable = roundTrips.length > 0 ? roundTrips : raw
+  const scored = usable.map((card) => {
+    const naturalFill = openStarterSlots(roster).some((slot) => slotCompat(card, slot) === 1)
+    const anyFill = fillsOpenStarter(card, roster)
+    return { card, score: card.ovr + (naturalFill ? 6 : anyFill ? 3 : 0) - card.usg * 0.08 }
+  })
+  scored.sort((a, b) => b.score - a.score)
+  return { type: 'TYPE_PICK', playerId, query: scored[0].card.name }
+}
+
 // Runs every consecutive CPU turn (used by solo mode and the online host).
 export function advanceCpuTurns(state: DraftState, ctx: DraftCtx): DraftState {
   let current = state
@@ -314,7 +474,10 @@ export function advanceCpuTurns(state: DraftState, ctx: DraftCtx): DraftState {
     if (!playerId) return current
     const player = current.players.find((p) => p.id === playerId)
     if (!player?.isCpu) return current
-    current = applyAction(current, cpuChoose(current), ctx)
+    const action = current.mode === 'themes' ? cpuChooseTheme(current, ctx) : cpuChoose(current)
+    const next = applyAction(current, action, ctx)
+    if (next === current) return current // safety: never loop in place
+    current = next
   }
 }
 

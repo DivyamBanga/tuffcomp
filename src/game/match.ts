@@ -13,6 +13,7 @@ import {
   type DraftMode,
   type DraftPlayer,
   type DraftState,
+  type PickInput,
 } from './draft'
 import {
   applyResult,
@@ -33,6 +34,8 @@ export interface MatchConfig {
   format: MatchFormat
   leagueSize: number
   seed: number
+  // Theme mode pick style; absent means 'type' (blind typing).
+  input?: PickInput
 }
 
 export type MatchPhase = 'draft' | 'preview' | 'season' | 'playoffs' | 'done'
@@ -91,7 +94,7 @@ const FILLER_NAMES = [
 // ------------------------------------------------------------------ init
 
 export function initMatch(config: MatchConfig, players: DraftPlayer[], ctx: DraftCtx): MatchState {
-  const draft = advanceCpuTurns(initDraft(config.mode, players, config.seed, ctx), ctx)
+  const draft = advanceCpuTurns(initDraft(config.mode, players, config.seed, ctx, config.input ?? 'type'), ctx)
   return {
     config,
     entries: players.map((p) => ({ id: p.id, name: p.name, isCpu: p.isCpu, isFiller: false })),

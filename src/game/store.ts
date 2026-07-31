@@ -12,7 +12,7 @@ export type Screen = 'home' | 'setup' | 'join' | 'lobby' | 'game' | 'trophies'
 export type SessionMode = 'solo' | 'host' | 'guest'
 export type NetStatus = 'idle' | 'connecting' | 'connected' | 'error'
 
-export const DEFAULT_CONFIG: MatchConfig = { mode: 'tiers', format: 'season', leagueSize: 4, seed: 0 }
+export const DEFAULT_CONFIG: MatchConfig = { mode: 'tiers', format: 'season', leagueSize: 4, seed: 0, input: 'type' }
 
 interface GameStore {
   screen: Screen
