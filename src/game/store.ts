@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { loadCards } from '../data/loadCards'
-import { clearJudgeKey, hasJudgeKey, judgeLeague, saveJudgeKey } from '../llm/judge'
+import { clearJudgeKey, judgeAvailable, judgeLeague, saveJudgeKey } from '../llm/judge'
 import { myPlayerId, saveName, savedName } from '../net/identity'
 import { makeRoomCode, type LobbySnapshot } from '../net/protocol'
 import { GuestRoom, HostRoom, realPeerFactory } from '../net/room'
@@ -117,7 +117,7 @@ export const useGame = create<GameStore>((set, get) => {
     trophies: loadTrophies(),
     trophySaved: false,
     autoSimming: false,
-    judgeArmed: hasJudgeKey(),
+    judgeArmed: judgeAvailable(),
     judging: false,
 
     setName: (name) => {
@@ -130,11 +130,11 @@ export const useGame = create<GameStore>((set, get) => {
 
     armJudge: (key) => {
       saveJudgeKey(key)
-      set({ judgeArmed: hasJudgeKey() })
+      set({ judgeArmed: judgeAvailable() })
     },
     disarmJudge: () => {
       clearJudgeKey()
-      set({ judgeArmed: false })
+      set({ judgeArmed: judgeAvailable() })
     },
 
     goHome: () => {
@@ -228,7 +228,7 @@ export const useGame = create<GameStore>((set, get) => {
       const { match, sessionMode, judging } = get()
       if (judging) return
       if (sessionMode === 'guest') return
-      if (match && match.phase === 'preview' && match.judge === null && hasJudgeKey()) {
+      if (match && match.phase === 'preview' && match.judge === null && judgeAvailable()) {
         set({ judging: true })
         try {
           const judgment = await judgeLeague(match.entries, match.rosters)

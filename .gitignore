@@ -15,6 +15,12 @@ dist-ssr
 # Raw source data for scripts/generate-players.mjs - large, regenerable via npm run data:fetch
 scripts/raw-data/
 
+# Secrets never enter git: env files and wrangler local secrets
+.env
+.env.*
+worker/.dev.vars
+worker/.wrangler/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

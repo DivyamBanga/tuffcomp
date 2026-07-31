@@ -26,6 +26,10 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+        env:
+          # Public URL of the judge proxy Worker (repo Settings -> Variables).
+          # Only a URL - the API key itself lives in the Worker's secret store.
+          VITE_JUDGE_PROXY_URL: ${{ vars.JUDGE_PROXY_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

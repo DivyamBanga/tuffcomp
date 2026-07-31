@@ -3,9 +3,22 @@ import { ALL_SLOTS, type Roster } from '../engine/lineup'
 
 // ----------------------------------------------------------------- the key
 //
-// The Anthropic API key lives in localStorage on the host's machine and
-// nowhere else: never in git, never in the bundle, never sent to peers
-// (only the finished judgment is broadcast), never logged.
+// Two ways the scout gets credentials, tried in this order:
+// 1. The judge proxy: a tiny Cloudflare Worker (worker/) that holds the
+//    real key as a server-side secret. Only its public URL is baked into
+//    the bundle, so everyone gets the scout and the key never ships.
+// 2. A personal key in localStorage on this machine only: never in git,
+//    never in the bundle, never sent to peers, never logged.
+
+const PROXY_URL = ((import.meta.env?.VITE_JUDGE_PROXY_URL as string | undefined) ?? '').trim()
+
+export function judgeViaProxy(): boolean {
+  return PROXY_URL.length > 0
+}
+
+export function judgeAvailable(): boolean {
+  return judgeViaProxy() || hasJudgeKey()
+}
 
 const KEY_STORAGE = 'ringchasers:anthropicKey'
 
@@ -39,7 +52,9 @@ export function hasJudgeKey(): boolean {
 
 // ------------------------------------------------------------------ types
 
-export const JUDGE_MODEL = 'claude-haiku-4-5'
+// Keep model and token budget in sync with worker/judge-proxy.js.
+export const JUDGE_MODEL = 'claude-sonnet-5'
+const JUDGE_MAX_TOKENS = 4000
 
 export interface TeamJudgment {
   offense: number
@@ -189,13 +204,43 @@ export function judgeAdjustments(judgment: LeagueJudgment, teamIds: string[]): M
 
 // ------------------------------------------------------------------- call
 
-// One Haiku call per league, after the draft. The SDK is imported lazily so
-// it never weighs down the main bundle, and any failure returns null - the
-// game silently falls back to the built-in engine.
+// One Sonnet call per league, after the draft: through the proxy when one
+// is configured (no key needed by anyone), else straight from this browser
+// with the locally saved key. Any failure returns null - the game silently
+// falls back to the built-in engine.
 export async function judgeLeague(
   entries: { id: string; name: string }[],
   rosters: Record<string, Roster>,
 ): Promise<LeagueJudgment | null> {
+  const prompt = buildJudgePrompt(entries, rosters)
+  const ids = entries.map((e) => e.id)
+
+  if (judgeViaProxy()) {
+    const viaProxy = await judgeThroughProxy(prompt, ids)
+    if (viaProxy) return viaProxy
+  }
+  return judgeDirect(prompt, ids)
+}
+
+async function judgeThroughProxy(prompt: string, ids: string[]): Promise<LeagueJudgment | null> {
+  try {
+    const response = await fetch(PROXY_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt, teamIds: ids }),
+      signal: AbortSignal.timeout(45_000),
+    })
+    if (!response.ok) return null
+    const data = (await response.json()) as { model?: string; text?: string }
+    if (typeof data.text !== 'string') return null
+    const teams = parseJudgment(data.text, ids)
+    return teams ? { model: typeof data.model === 'string' ? data.model : JUDGE_MODEL, teams } : null
+  } catch {
+    return null
+  }
+}
+
+async function judgeDirect(prompt: string, ids: string[]): Promise<LeagueJudgment | null> {
   const apiKey = savedJudgeKey()
   if (!apiKey) return null
   try {
@@ -204,20 +249,17 @@ export async function judgeLeague(
       apiKey,
       dangerouslyAllowBrowser: true,
       maxRetries: 1,
-      timeout: 30_000,
+      timeout: 60_000,
     })
     const response = await client.messages.create({
       model: JUDGE_MODEL,
-      max_tokens: 1500,
+      max_tokens: JUDGE_MAX_TOKENS,
       system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: buildJudgePrompt(entries, rosters) }],
-      output_config: { format: { type: 'json_schema', schema: JUDGE_SCHEMA } },
+      messages: [{ role: 'user', content: prompt }],
+      output_config: { effort: 'medium', format: { type: 'json_schema', schema: JUDGE_SCHEMA } },
     })
     const text = response.content.find((block) => block.type === 'text')?.text ?? ''
-    const teams = parseJudgment(
-      text,
-      entries.map((e) => e.id),
-    )
+    const teams = parseJudgment(text, ids)
     return teams ? { model: response.model, teams } : null
   } catch {
     return null

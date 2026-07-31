@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useGame } from '../game/store'
+import { judgeViaProxy } from '../llm/judge'
 import { normalizeRoomCode } from '../net/protocol'
 import { Btn, RingSeal, Sheet, StatusLine } from './components'
 
@@ -74,11 +75,23 @@ export function HomeScreen() {
   )
 }
 
-// The optional AI scout. The key is saved to localStorage in THIS browser
-// only - never in the code, the bundle, or any network message to friends.
+// The AI scout. With the judge proxy configured (the normal setup), it is
+// simply on for everyone - the key lives server-side in the Worker, never
+// here. Without a proxy, a personal key can be saved to localStorage in
+// THIS browser only - never in the code, the bundle, or any message to
+// friends.
 function JudgeCell() {
   const { judgeArmed, armJudge, disarmJudge } = useGame()
   const [key, setKey] = useState('')
+
+  if (judgeViaProxy()) {
+    return (
+      <div className="cell flex items-center gap-2">
+        <span className="h-1.5 w-1.5 rounded-full bg-hot" />
+        <span className="plate !text-[9px] text-ink">AI SCOUT INCLUDED · CLAUDE JUDGES EVERY SEASON</span>
+      </div>
+    )
+  }
 
   return (
     <div className="cell">
@@ -86,7 +99,7 @@ function JudgeCell() {
         <div className="flex items-center justify-between gap-3">
           <span className="flex items-center gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-hot" />
-            <span className="plate !text-[9px] text-ink">AI SCOUT ARMED · CLAUDE HAIKU</span>
+            <span className="plate !text-[9px] text-ink">AI SCOUT ARMED · CLAUDE</span>
           </span>
           <button type="button" onClick={disarmJudge} className="plate cursor-pointer !text-[9px] transition-colors hover:text-ink">
             REMOVE KEY
@@ -118,7 +131,7 @@ function JudgeCell() {
             </Btn>
           </div>
           <p className="mt-1.5 text-[11px] leading-snug text-faint">
-            Stays in this browser only. One Haiku call per season scouts every drafted team for star power, fit, shooting and defense.
+            Stays in this browser only. One Claude call per season scouts every drafted team for star power, fit, shooting and defense.
           </p>
         </>
       )}

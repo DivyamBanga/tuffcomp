@@ -1,0 +1,6 @@
+name = "ringchasers-judge"
+main = "judge-proxy.js"
+compatibility_date = "2026-07-01"
+
+# The Anthropic key is a secret, never a var:
+#   npx wrangler secret put ANTHROPIC_API_KEY
