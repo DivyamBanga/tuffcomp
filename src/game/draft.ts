@@ -9,7 +9,7 @@ import {
   type SlotId,
 } from '../engine/lineup'
 import { hashSeed, mulberry32, shuffle, type Rng } from '../engine/prng'
-import { pickThemeRounds, resolveTypedPick, themeById } from './themes'
+import { pickDraftTheme, resolveTypedPick, themeById } from './themes'
 
 // ---------------------------------------------------------------- config
 
@@ -104,7 +104,7 @@ export interface DraftState {
   order: string[] // snake pick sequence, ROUNDS * players long
   pickIndex: number
   offer: Offer | null
-  themeRounds: string[] // theme ids, one per round (themes mode only)
+  theme: string | null // the draft's one theme id (themes mode only)
   lastType: TypeFeedback | null
   lastPick: PickSummary | null
   draftedPids: string[] // one real person per league, regardless of season
@@ -157,7 +157,7 @@ export function initDraft(
     ),
     pickIndex: 0,
     offer: null,
-    themeRounds: mode === 'themes' ? pickThemeRounds(ctx.pool, players.length, seed, ROUNDS) : [],
+    theme: mode === 'themes' ? pickDraftTheme(ctx.pool, players.length, seed, ROUNDS) : null,
     lastType: null,
     lastPick: null,
     draftedPids: [],
@@ -272,10 +272,10 @@ function bestSeasonPerPerson(cards: Card[]): Card[] {
   return [...byPid.values()]
 }
 
-// Cards the current drafter could legally use this pick under the round's
+// Cards the current drafter could legally use this pick under the draft's
 // theme (empty when the theme has dried up for their needs).
-function themeUsableCards(state: DraftState, ctx: DraftCtx, playerId: string, round: number): Card[] {
-  const theme = themeById(state.themeRounds[round - 1])
+function themeUsableCards(state: DraftState, ctx: DraftCtx, playerId: string): Card[] {
+  const theme = themeById(state.theme!)
   const roster = state.teams[playerId].roster
   const constrain = mustFillStarter(state, playerId)
   const eligible = availableCards(state, ctx).filter(theme.test)
@@ -288,7 +288,7 @@ function themeUsableCards(state: DraftState, ctx: DraftCtx, playerId: string, ro
 // opens past the theme so nobody softlocks).
 function themeOffer(state: DraftState, ctx: DraftCtx, playerId: string, round: number): Offer | null {
   const team = state.teams[playerId]
-  const usable = themeUsableCards(state, ctx, playerId, round)
+  const usable = themeUsableCards(state, ctx, playerId)
   const fallback = usable.length === 0
   const gridNeeded = state.input === 'grid' || team.strikesLeft <= 0 || fallback
   if (!gridNeeded) return null
@@ -353,8 +353,7 @@ export function applyAction(state: DraftState, action: DraftAction, ctx: DraftCt
 
   if (action.type === 'TYPE_PICK') {
     if (state.mode !== 'themes' || state.offer !== null) return state
-    const round = currentRound(state)
-    const theme = themeById(state.themeRounds[round - 1])
+    const theme = themeById(state.theme!)
     const team = state.teams[action.playerId]
     const attempt = (state.lastType?.attempt ?? 0) + 1
 
@@ -454,7 +453,7 @@ function cpuChooseTheme(state: DraftState, ctx: DraftCtx): DraftAction {
   const playerId = currentPlayerId(state)!
   if (state.offer) return cpuChoose(state)
   const roster = state.teams[playerId].roster
-  const raw = bestSeasonPerPerson(themeUsableCards(state, ctx, playerId, currentRound(state)))
+  const raw = bestSeasonPerPerson(themeUsableCards(state, ctx, playerId))
   const roundTrips = raw.filter((card) => resolveTypedPick(ctx.pool, card.name)?.pid === card.pid)
   const usable = roundTrips.length > 0 ? roundTrips : raw
   const scored = usable.map((card) => {

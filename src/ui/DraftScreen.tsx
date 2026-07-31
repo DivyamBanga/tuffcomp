@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { loadCards } from '../data/loadCards'
 import { currentRound, ROUNDS, STRIKES_PER_PLAYER, type DraftState, type TypeFeedback } from '../game/draft'
-import { THEMES, themeById } from '../game/themes'
+import { THEMES, suggestNames, themeById } from '../game/themes'
 import { useGame } from '../game/store'
 import type { MatchState } from '../game/match'
 import { ALL_SLOTS } from '../engine/lineup'
@@ -8,7 +9,7 @@ import type { Card } from '../types'
 import { Btn, Headshot, MiniCard, PlayerCard, Sheet, StatusLine } from './components'
 
 const SPIN_MS = 1150
-const REVEAL_MS = 1200
+const REVEAL_MS = 1400
 
 function whiffLine(feedback: TypeFeedback): string {
   const name = feedback.matchedName?.toUpperCase()
@@ -34,19 +35,19 @@ function StrikeDots({ left }: { left: number }) {
   )
 }
 
-// Cycles through decoy theme labels before settling - the round's spin.
-function useThemeReveal(mode: string, round: number) {
-  const [revealing, setRevealing] = useState(false)
+// The draft's one theme deals itself once at the start: decoy labels
+// cycle, then the real theme settles and holds for all 8 rounds.
+function useThemeReveal(themed: boolean) {
+  const [revealing, setRevealing] = useState(themed)
   const [decoy, setDecoy] = useState('')
-  const lastRound = useRef(0)
+  const started = useRef(false)
 
   useEffect(() => {
-    if (mode !== 'themes' || round === lastRound.current) return
-    lastRound.current = round
-    setRevealing(true)
+    if (!themed || started.current) return
+    started.current = true
     let ticks = 0
     const interval = window.setInterval(() => {
-      setDecoy(THEMES[(round * 7 + ticks * 5) % THEMES.length].label)
+      setDecoy(THEMES[(ticks * 7 + 3) % THEMES.length].label)
       ticks++
     }, 100)
     const timeout = window.setTimeout(() => {
@@ -57,7 +58,7 @@ function useThemeReveal(mode: string, round: number) {
       window.clearInterval(interval)
       window.clearTimeout(timeout)
     }
-  }, [mode, round])
+  }, [themed])
 
   return { revealing, decoy }
 }
@@ -67,39 +68,94 @@ function useThemeReveal(mode: string, round: number) {
 function TypePickForm({ draft, myId }: { draft: DraftState; myId: string }) {
   const { dispatch } = useGame()
   const [query, setQuery] = useState('')
+  const [highlight, setHighlight] = useState(-1)
+  const [pool, setPool] = useState<Card[] | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const strikes = draft.teams[myId].strikesLeft
   const feedback = draft.lastType?.playerId === myId ? draft.lastType : null
 
+  // Name index for autocomplete - spelling help over ALL players, never
+  // filtered to the theme.
+  useEffect(() => {
+    let live = true
+    void loadCards().then((cards) => {
+      if (live) setPool(cards)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
+
   // A new pick of mine: clear the slate.
   useEffect(() => {
     setQuery('')
+    setHighlight(-1)
     inputRef.current?.focus()
   }, [draft.pickIndex])
 
-  function submit() {
-    const q = query.trim()
-    if (q.length < 2) return
-    dispatch({ type: 'DRAFT', action: { type: 'TYPE_PICK', playerId: myId, query: q } })
+  const suggestions = pool && query.trim().length >= 2 ? suggestNames(pool, query) : []
+
+  function callName(name: string) {
+    if (name.trim().length < 2) return
+    setHighlight(-1)
+    dispatch({ type: 'DRAFT', action: { type: 'TYPE_PICK', playerId: myId, query: name.trim() } })
+  }
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'ArrowDown' && suggestions.length > 0) {
+      e.preventDefault()
+      setHighlight((h) => (h + 1) % suggestions.length)
+    } else if (e.key === 'ArrowUp' && suggestions.length > 0) {
+      e.preventDefault()
+      setHighlight((h) => (h <= 0 ? suggestions.length - 1 : h - 1))
+    } else if (e.key === 'Escape') {
+      setHighlight(-1)
+    } else if (e.key === 'Enter') {
+      callName(highlight >= 0 && suggestions[highlight] ? suggestions[highlight].name : query)
+    }
   }
 
   return (
     <div className="mx-auto flex max-w-md flex-col items-center gap-4 py-6">
       <div key={feedback?.attempt ?? 0} className={`w-full ${feedback ? 'animate-shake' : ''}`}>
         <span className="plate plate-faint mb-1 block !text-[9px]">NAME YOUR PICK · BEST FITTING SEASON LANDS</span>
-        <div className="flex items-end gap-3">
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value.slice(0, 32))}
-            onKeyDown={(e) => e.key === 'Enter' && submit()}
-            placeholder="steph curry"
-            autoFocus
-            className="field headline flex-1 text-2xl"
-          />
-          <Btn primary onClick={submit} disabled={query.trim().length < 2} className="!py-2.5">
-            CALL IT
-          </Btn>
+        <div className="relative">
+          <div className="flex items-end gap-3">
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value.slice(0, 32))
+                setHighlight(-1)
+              }}
+              onKeyDown={onKeyDown}
+              placeholder="steph curry"
+              autoFocus
+              autoComplete="off"
+              className="field headline flex-1 text-2xl"
+            />
+            <Btn primary onClick={() => callName(query)} disabled={query.trim().length < 2} className="!py-2.5">
+              CALL IT
+            </Btn>
+          </div>
+          {suggestions.length > 0 && (
+            <ul className="absolute inset-x-0 top-full z-10 mt-1 border border-line bg-paper">
+              {suggestions.map((s, i) => (
+                <li key={s.pid}>
+                  <button
+                    type="button"
+                    onMouseEnter={() => setHighlight(i)}
+                    onClick={() => callName(s.name)}
+                    className={`block w-full px-3 py-1.5 text-left text-[13px] font-semibold transition-colors ${
+                      i === highlight ? 'bg-paper2 text-ink' : 'text-dim'
+                    }`}
+                  >
+                    {s.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
       <div className="flex w-full items-center justify-between">
@@ -107,7 +163,7 @@ function TypePickForm({ draft, myId }: { draft: DraftState; myId: string }) {
           <span className="plate !text-[9px]">STRIKES</span>
           <StrikeDots left={strikes} />
         </span>
-        <span className="plate plate-faint !text-[8.5px]">TYPOS FORGIVEN · WRONG CALLS ARE NOT</span>
+        <span className="plate plate-faint !text-[8.5px]">SPELLING HELP ONLY · IT WON'T SAY WHO FITS</span>
       </div>
       {feedback && <p className="plate !text-[10px] !tracking-[0.1em] text-ink">{whiffLine(feedback)}</p>}
     </div>
@@ -126,9 +182,9 @@ export function DraftScreen({ match }: { match: MatchState }) {
   const offer = draft.offer
   const myTeam = draft.teams[myId]
   const themed = draft.mode === 'themes'
-  const theme = themed ? themeById(draft.themeRounds[round - 1]) : null
+  const theme = themed ? themeById(draft.theme!) : null
 
-  const { revealing, decoy } = useThemeReveal(draft.mode, round)
+  const { revealing, decoy } = useThemeReveal(themed)
 
   // Tiers mode: slot-machine intro every time a fresh offer lands for me.
   const [spinning, setSpinning] = useState(false)
@@ -169,7 +225,7 @@ export function DraftScreen({ match }: { match: MatchState }) {
       />
 
       <Sheet
-        title={themed ? `ROUND ${round} · THEME ROUND` : `ROUND ${round} · ${String(offer?.tier ?? 'MYSTERY')} SPIN`}
+        title={themed ? `THEME DRAFT · ONE THEME, ALL ${ROUNDS} ROUNDS` : `ROUND ${round} · ${String(offer?.tier ?? 'MYSTERY')} SPIN`}
         right={
           <span className={`plate !text-[9px] ${myTurn ? 'animate-pulse text-hot' : ''}`}>
             {myTurn ? '▶ YOUR CALL' : `${turnPlayer?.name ?? ''}'S CALL`}
@@ -182,15 +238,15 @@ export function DraftScreen({ match }: { match: MatchState }) {
               <p className="headline text-3xl text-faint sm:text-4xl">{decoy || '· · ·'}</p>
             ) : (
               <>
-                <p className="headline animate-rise text-3xl text-ink sm:text-4xl">{theme!.label}</p>
-                <p className="animate-rise mt-1.5 text-[13px] text-dim">{theme!.detail}</p>
+                <p className="headline text-3xl text-ink sm:text-4xl">{theme!.label}</p>
+                <p className="mt-1.5 text-[13px] text-dim">{theme!.detail}</p>
               </>
             )}
           </div>
         )}
 
         {themed && revealing ? (
-          <p className="plate animate-pulse py-8 text-center !text-[10px]">DEALING THE THEME…</p>
+          <p className="plate animate-pulse py-8 text-center !text-[10px]">DEALING THE DRAFT'S THEME…</p>
         ) : themed && myTurn && !offer ? (
           <TypePickForm draft={draft} myId={myId} />
         ) : !themed && spinning && myTurn ? (

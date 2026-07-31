@@ -1,5 +1,6 @@
 import type { Card } from '../types'
 import franchisesJson from '../data/franchises.json'
+import { STARTER_SLOTS, canPlaySlot } from '../engine/lineup'
 import { mulberry32, shuffle } from '../engine/prng'
 
 const FRANCHISE_NAMES = franchisesJson as Record<string, string>
@@ -375,38 +376,37 @@ export function themeById(id: string): Theme {
   return theme
 }
 
-// ------------------------------------------------------- round selection
+// ------------------------------------------------------- theme selection
 
-// A theme qualifies for a draft when it has real depth: enough distinct
-// people and star power worth fighting over. (A theme that can't cover a
-// position is fine - it constrains one pick, not the team, and a forced
-// starter fill falls back to an open board.)
-export function themeHasDepth(theme: Theme, pool: Card[], playerCount: number): boolean {
+// One theme carries the ENTIRE draft, so it needs serious depth: enough
+// distinct people for every pick with slack to spare, stars worth fighting
+// over in round 1, and real coverage at every starter slot so whole legal
+// teams can be built inside the theme (thin lists like MVP winners
+// naturally drop out for bigger leagues).
+export function themeCanCarryDraft(theme: Theme, pool: Card[], playerCount: number, rounds: number): boolean {
   const eligible = pool.filter(theme.test)
   const pids = new Set(eligible.map((c) => c.pid))
-  if (pids.size < Math.max(16, playerCount * 3)) return false
+  if (pids.size < playerCount * rounds + 8) return false
 
   const starPids = new Set(eligible.filter((c) => c.ovr >= 85).map((c) => c.pid))
-  return starPids.size >= playerCount
+  if (starPids.size < playerCount) return false
+
+  for (const slot of STARTER_SLOTS) {
+    const coverage = new Set(eligible.filter((c) => canPlaySlot(c, slot)).map((c) => c.pid))
+    if (coverage.size < playerCount * 2) return false
+  }
+  return true
 }
 
-// The 8 themes for a draft: seeded shuffle, no repeats, first valid wins.
-export function pickThemeRounds(pool: Card[], playerCount: number, seed: number, rounds: number): string[] {
+// The draft's one theme: seeded shuffle, first theme deep enough wins.
+export function pickDraftTheme(pool: Card[], playerCount: number, seed: number, rounds: number): string {
   const shuffled = shuffle(mulberry32(seed), THEMES)
-  const chosen: string[] = []
   for (const theme of shuffled) {
-    if (chosen.length >= rounds) break
-    if (themeHasDepth(theme, pool, playerCount)) chosen.push(theme.id)
+    if (themeCanCarryDraft(theme, pool, playerCount, rounds)) return theme.id
   }
-  // The registry is far larger than a draft, so this cannot realistically
-  // run short - but never return a broken ladder.
-  if (chosen.length < rounds) {
-    for (const theme of shuffled) {
-      if (chosen.length >= rounds) break
-      if (!chosen.includes(theme.id)) chosen.push(theme.id)
-    }
-  }
-  return chosen
+  // Eras alone can carry any league size, so this is unreachable with the
+  // real pool - but never crash a draft over it.
+  return shuffled[0].id
 }
 
 // ----------------------------------------------------------- typed picks
@@ -467,6 +467,28 @@ function tokensPrefixMatch(query: string[], name: string[]): boolean {
     ni++
   }
   return true
+}
+
+// Autocomplete for the type-in box: spelling help only. Suggestions come
+// from ALL players and are never filtered to the theme, so the dropdown
+// helps you type "Antetokounmpo" without telling you who fits.
+export function suggestNames(pool: Card[], query: string, limit = 6): { pid: string; name: string }[] {
+  const q = normalizeName(query)
+  if (q.length < 2) return []
+  const qTokens = q.split(' ')
+
+  // Full-name and single-token prefixes rank together so fame breaks the
+  // tie: "ante" should surface Antetokounmpo before Ante Zizic.
+  const scored: { entry: NameEntry; rank: number }[] = []
+  for (const entry of nameIndex(pool)) {
+    let rank: number
+    if (entry.norm.startsWith(q) || entry.tokens.some((token) => token.startsWith(q))) rank = 2
+    else if (tokensPrefixMatch(qTokens, entry.tokens)) rank = 1
+    else continue
+    scored.push({ entry, rank })
+  }
+  scored.sort((a, b) => b.rank - a.rank || b.entry.peak - a.entry.peak)
+  return scored.slice(0, limit).map(({ entry }) => ({ pid: entry.pid, name: entry.name }))
 }
 
 // Resolve what the drafter meant. Ties go to the biggest name (highest

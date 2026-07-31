@@ -36,9 +36,9 @@ beforeAll(async () => {
 })
 
 // A card whose name resolves round-trip to its own person and fits the
-// current round's theme - a guaranteed-valid typed pick.
+// draft's theme - a guaranteed-valid typed pick.
 function validTypedPick(state: DraftState): Card {
-  const theme = themeById(state.themeRounds[0])
+  const theme = themeById(state.theme!)
   const drafted = new Set(state.draftedPids)
   const card = pool.find(
     (c) => !drafted.has(c.pid) && theme.test(c) && resolveTypedPick(pool, c.name)?.pid === c.pid,
@@ -49,7 +49,7 @@ function validTypedPick(state: DraftState): Card {
 
 // A person with zero seasons passing the theme, resolvable by name.
 function offThemeName(state: DraftState): string {
-  const theme = themeById(state.themeRounds[0])
+  const theme = themeById(state.theme!)
   const passing = new Set(pool.filter(theme.test).map((c) => c.pid))
   const card = pool.find((c) => !passing.has(c.pid) && resolveTypedPick(pool, c.name)?.pid === c.pid)
   expect(card).toBeDefined()
@@ -57,17 +57,18 @@ function offThemeName(state: DraftState): string {
 }
 
 describe('theme draft init', () => {
-  it('deals 8 unique themes and starts in type mode with no board', () => {
+  it('deals ONE theme for the whole draft and starts in type mode with no board', () => {
     const state = initDraft('themes', HUMANS, 42, ctx, 'type')
-    expect(state.themeRounds.length).toBe(ROUNDS)
-    expect(new Set(state.themeRounds).size).toBe(ROUNDS)
+    expect(state.theme).not.toBeNull()
+    expect(themeById(state.theme!).label.length).toBeGreaterThan(0)
+    expect(initDraft('themes', HUMANS, 42, ctx, 'type').theme).toBe(state.theme)
     expect(state.offer).toBeNull()
     expect(state.teams.p1.strikesLeft).toBe(STRIKES_PER_PLAYER)
   })
 
   it('grid mode opens with a themed board of distinct people', () => {
     const state = initDraft('themes', HUMANS, 42, ctx, 'grid')
-    const theme = themeById(state.themeRounds[0])
+    const theme = themeById(state.theme!)
     expect(state.offer).not.toBeNull()
     const cards = state.offer!.cards
     expect(cards.length).toBeGreaterThan(0)
@@ -79,7 +80,7 @@ describe('theme draft init', () => {
 describe('typed picks', () => {
   it('a valid call drafts that person’s best in-theme season and advances', () => {
     const state = initDraft('themes', HUMANS, 42, ctx, 'type')
-    const theme = themeById(state.themeRounds[0])
+    const theme = themeById(state.theme!)
     const target = validTypedPick(state)
     const next = applyAction(state, { type: 'TYPE_PICK', playerId: 'p1', query: target.name }, ctx)
 
@@ -124,7 +125,7 @@ describe('typed picks', () => {
 
   it('three strikes opens the board, and the board still honors the theme', () => {
     let state = initDraft('themes', HUMANS, 42, ctx, 'type')
-    const theme = themeById(state.themeRounds[0])
+    const theme = themeById(state.theme!)
     const name = offThemeName(state)
     for (let i = 0; i < STRIKES_PER_PLAYER; i++) {
       expect(state.offer).toBeNull()
@@ -169,19 +170,18 @@ describe('full theme drafts', () => {
     }
   })
 
-  it('every non-fallback pick in a stepped draft honors its round theme', () => {
+  it('every non-fallback pick in a stepped draft honors the one theme', () => {
     let state = initDraft('themes', CPUS, 123, ctx, 'grid')
+    const theme = themeById(state.theme!)
     while (!state.done) {
       const playerId = currentPlayerId(state)!
-      const round = Math.floor(state.pickIndex / CPUS.length) + 1
-      const theme = themeById(state.themeRounds[round - 1])
       const offer = state.offer!
       const fallback = offer.themeFallback === true
       const before = state.teams[playerId].roster
       state = applyAction(state, { type: 'TAKE', playerId, cardId: offer.cards[0].id }, ctx)
       const after = state.teams[playerId].roster
       const gained = rosterCards(after).find((c) => !rosterCards(before).some((b) => b.id === c.id))!
-      if (!fallback) expect(theme.test(gained), `round ${round} ${gained.name}`).toBe(true)
+      if (!fallback) expect(theme.test(gained), `pick ${state.pickIndex} ${gained.name}`).toBe(true)
     }
   })
 })
