@@ -12,21 +12,24 @@ Play it here: https://divyambanga.github.io/tuffcomp/
 1. Tiered Spins, the classic. Everyone climbs the same rarity ladder of card
    spins. Round 1 guarantees a star, the last round is a jackpot wildcard.
    2 rerolls each.
-2. Theme Draft, the fair fight. Every round deals one theme that applies to
-   everyone: Lakers only, 40% from deep, the '90s only, MVP winners only,
-   white guys only. In hard mode you type your pick blind from memory, with
-   typo forgiveness and 3 strikes before the board bails you out. Easy mode
-   shows a grid. Your pick lands as that player's best season fitting the
-   theme. Snake order, one real person per league.
+2. Theme Draft, the fair fight. One theme deals at the start and carries the
+   whole draft: Lakers only, 40% from deep, the '90s only, white guys only.
+   Everyone drafts back and forth on that same theme, snake order, one real
+   person per league. In hard mode you type your pick from memory with an
+   autocomplete dropdown that helps spelling but never says who fits, typo
+   forgiveness, and 3 strikes before the board bails you out. Easy mode shows
+   a grid. Your pick lands as that player's best season fitting the theme.
 
 ## Then the season
 
 Set your five starters and bench. The engine rates quality, fit, chemistry
-from real life teammates, and balance. If you paste in an Anthropic API key,
-an AI scout (Claude Haiku, one call per season) judges every roster for star
-power, fit, shooting and defense, writes a scouting blurb, and nudges the sim
-within hard caps so it can never break fairness. The key stays in your
-browser only.
+from real life teammates, and balance. An AI scout (Claude Sonnet, one call
+per season) judges every roster for star power, fit, shooting and defense,
+writes a scouting blurb, and nudges the sim within hard caps so it can never
+break fairness. The scout runs through a tiny Cloudflare Worker that keeps
+the API key server side, so nobody playing ever needs a key and the key
+never ships with the site. No Worker set up? You can still paste a personal
+key that stays in your own browser.
 
 Sim game by game or all at once. A game log keeps every box score one tap
 away, and stars have real form nights: an elite scorer can catch fire and go
@@ -66,8 +69,9 @@ npm run data:generate
 - React, TypeScript, Vite, Tailwind, zustand
 - Pure TypeScript engines for evaluation and simulation, fully seeded and deterministic
 - PeerJS WebRTC for online rooms, no backend anywhere
-- Optional Claude Haiku judge via the Anthropic SDK, key never leaves your browser
-- 93 tests with Vitest, deployed free on GitHub Pages
+- Claude Sonnet judge behind a one file Cloudflare Worker (worker/), key held
+  as a Worker secret, never in the bundle
+- 95 tests with Vitest, deployed free on GitHub Pages
 
 ## Status
 

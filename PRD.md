@@ -46,8 +46,9 @@ hairline grid, system type, one accent).
   near-black paper (#121211), off-white ink, hairline rules that draw in hot and
   cool, system type with mono annotations, player photos as the one full-color
   element, gold reserved for GOAT cards, clinched titles, and the ring.
-- AI judge: optional Claude Haiku scout (one call per season), key stored in the
-  host's browser only, blended into the sim within hard caps.
+- AI judge: Claude Sonnet scout (one call per season) behind a key-holding
+  Cloudflare Worker so everyone gets it keyless; blended into the sim within
+  hard caps. Personal-key fallback stays browser-local.
 - Name: RING CHASERS (repo stays tuffcomp; branding only).
 
 ---
@@ -98,26 +99,32 @@ Each spin deals 4 cards; take one or reroll (2 rerolls each). Offers bias toward
 starter needs, and once your open starter slots equal your remaining picks, only
 starter-fillers are offered - no team can finish unable to field five.
 
-Theme Draft (v2 flagship): every round deals ONE theme shared by every drafter that
-round - the fairness is that everyone answers the same question. ~40 themes in
-`src/game/themes.ts` across four kinds:
+Theme Draft (v2 flagship): ONE theme deals at the start and carries the ENTIRE
+draft - everyone drafts back and forth on the same question for all 8 rounds.
+~40 themes in `src/game/themes.ts` across four kinds:
 - franchise ("LOS ANGELES LAKERS ONLY", 25 storied franchises)
 - era (the '80s / '90s / 2000s / 2010s / modern)
 - stat archetypes (40% from deep, 25+ PPG, lockdown defenders, glass cleaners,
   floor generals, rim protectors, iron men) computed from real stat lines
 - curated lists (MVP winners, Hall of Famers from data; international and
   white-guys lists hand-curated and validated by tests against the pool)
-Theme selection is seeded per draft, no repeats, and only themes with real depth
-qualify (enough distinct people and 85+ OVR stars for the league size).
+Selection is seeded per draft, and because one theme must sustain whole teams,
+it only qualifies with serious depth: distinct people for every pick plus slack
+(playerCount x 8 + 8), 85+ OVR stars for the league size, and coverage at every
+starter slot - thin lists (MVP winners) and position-locked themes (rim
+protectors) drop out automatically as the league grows.
 
 Pick input is a lobby-wide setting:
-- TYPE-IN (hard): name your pick blind. Fuzzy matching forgives typos and
-  shorthand ("steph curry", "jokic", bare "jordan" resolves to the famous one).
-  An off-theme, already-taken, or can't-fit call burns 1 of 3 strikes; gibberish
-  costs nothing. Out of strikes, a board bails you out for the rest of the draft.
+- TYPE-IN (hard): name your pick from memory. An autocomplete dropdown helps
+  with spelling - it suggests from ALL players and is never filtered to the
+  theme, so it aids typing "Antetokounmpo" without revealing who fits. Fuzzy
+  matching forgives typos and shorthand ("steph curry", "jokic", bare "jordan"
+  resolves to the famous one). An off-theme, already-taken, or can't-fit call
+  burns 1 of 3 strikes; gibberish costs nothing. Out of strikes, a board bails
+  you out for the rest of the draft.
 - GRID (easy): a board of the best eligible fits, one card per person.
-A typed player lands as their best season passing the theme. If a theme dries up
-for a drafter's forced starter needs, the board falls back open so nobody
+A typed player lands as their best season passing the theme. If the theme dries
+up for a drafter's forced starter needs, the board falls back open so nobody
 softlocks. CPUs call names like humans and never waste strikes. Everyone sees
 the last pick and the last whiff ("tried JORDAN - never a Laker").
 
@@ -172,13 +179,22 @@ Pure TS on a seeded PRNG - a seed fully determines every game, so results replay
 
 ## 6b. The AI judge (v2)
 
-Optional Claude Haiku scout (`src/llm/judge.ts`), off unless a key is armed:
+Claude Sonnet scout (`src/llm/judge.ts` + `worker/judge-proxy.js`), two paths:
 
-- Key: pasted into an in-app field, stored in that browser's localStorage only -
-  never in git, the bundle, logs, or any peer message. Masked input, one-tap removal.
-- One call per season at tip-off (host or solo only), `claude-haiku-4-5` via the
-  official SDK (lazy-imported, browser access header). Structured outputs with a
-  strict JSON schema, so the response cannot be malformed.
+- Proxy (the normal setup): a one-file Cloudflare Worker holds the Anthropic key
+  as a server-side secret; the site ships only the Worker's public URL
+  (VITE_JUDGE_PROXY_URL repo variable). The Worker pins model, max_tokens,
+  system prompt, and output schema, and rejects non-judge-shaped requests, so
+  the endpoint is only usable as a basketball scout. Everyone gets the scout,
+  nobody needs a key. Recommended: set a monthly spend limit in the Anthropic
+  console since the endpoint is public.
+- Personal key fallback: pasted into an in-app field, stored in that browser's
+  localStorage only - never in git, the bundle, logs, or any peer message.
+- One call per season at tip-off (host or solo only), `claude-sonnet-5`
+  (effort medium, 4000 max tokens for adaptive thinking headroom) via the
+  official SDK (lazy-imported, browser access header) or raw fetch in the
+  Worker. Structured outputs with a strict JSON schema, so the response cannot
+  be malformed.
 - The prompt sends every roster's compact stat lines and asks for 0-100 scores
   relative to this league only - offense, defense, star power, cohesion - plus a
   one-line scouting blurb per team (shown on the preview screen).
@@ -226,13 +242,15 @@ Solo mode never touches networking.
 - Look: design tokens and hairline-grid system in `src/index.css`, lifted from
   divyambanga.github.io (draw-in rules, cooling lines, plate labels, ledgers,
   ring seal, pen-stroke confetti). No web fonts - system sans + ui-monospace.
-- Testing: Vitest - 93 tests: data validation, engine, sim (incl. heater
-  distribution), season, draft (tiered + themes + fuzzy matching + curated-list
-  validation), match, judge (prompt/parse/blend, no network), netcode over fake
-  wire, and a store-level smoke test that plays a full solo game to a champion.
+- Testing: Vitest - 95 tests: data validation, engine, sim (incl. heater
+  distribution), season, draft (tiered + themes + fuzzy matching + autocomplete
+  + curated-list validation), match, judge (prompt/parse/blend, no network),
+  netcode over fake wire, and a store-level smoke test that plays a full solo
+  game to a champion.
 - Deploy: GitHub Pages via Actions (npm ci, test, build on every push). All free.
 - Structure:
   - scripts/ - data fetch + generate (dev-only, csv-parse)
+  - worker/ - the judge proxy Worker (deployed separately via wrangler)
   - src/data/ - players.json + franchises.json (generated), loader, validation tests
   - src/engine/ - lineup, evaluate, prng, sim, season (+ tests)
   - src/game/ - draft, themes, match, store, trophies (+ tests)
