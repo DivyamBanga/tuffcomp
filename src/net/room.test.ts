@@ -73,7 +73,7 @@ function makeFakeNetwork(): PeerFactory {
 // ------------------------------------------------------------------ setup
 
 let ctx: DraftCtx
-const CONFIG: MatchConfig = { mode: 'tiers', format: 'series', leagueSize: 2, seed: 5 }
+const CONFIG: MatchConfig = { mode: 'themes', format: 'series', leagueSize: 2, seed: 5, input: 'grid' }
 
 beforeAll(async () => {
   ctx = { pool: await loadCards() }

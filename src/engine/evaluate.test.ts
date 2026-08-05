@@ -73,6 +73,22 @@ describe('evaluateTeam', () => {
     expect(realTeammatePairs([jordan96, lavine21]).length).toBe(0)
   })
 
+  it('stars matter: a superstar-led five outrates a flat five of equal average', () => {
+    const flat = balancedStarters(86)
+    const topHeavy = balancedStarters(82)
+    topHeavy.PG = makeCard({ pos: 'PG', ovr: 99, usg: 26, attrs: { sc: 95, pm: 95, sh: 88, df: 80 } })
+    // means: flat 86 vs topHeavy (99+82*4)/5 = 85.4 - yet stars win
+    expect(evaluateTeam(topHeavy).quality).toBeGreaterThan(evaluateTeam(flat).quality)
+  })
+
+  it('an offense with no shooters loses balance to one with spacing', () => {
+    const bricks = balancedStarters(88)
+    for (const slot of ['PG', 'SG', 'SF', 'PF', 'C'] as const) {
+      bricks[slot] = makeCard({ pos: slot, ovr: 88, attrs: { sh: 35 } })
+    }
+    expect(evaluateTeam(bricks).balance).toBeLessThan(evaluateTeam(balancedStarters(88)).balance)
+  })
+
   it('flags a missing need in balance and the summary', () => {
     const noRim = makeRoster({
       PF: makeCard({ pos: 'PF', ovr: 88, attrs: { rm: 26, rb: 40, df: 45 } }),

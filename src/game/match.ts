@@ -28,7 +28,13 @@ import {
 
 // ----------------------------------------------------------------- config
 
-export type MatchFormat = 'season' | 'series'
+// 'chase' is the solo 82-0 run: draft under the theme, then your squad
+// plays an 82-game season against generated opposition - the record is
+// the score.
+export type MatchFormat = 'season' | 'series' | 'chase'
+
+export const CHASE_GAMES = 82
+const CHASE_OPPONENTS = 14
 
 export interface MatchConfig {
   mode: DraftMode
@@ -142,21 +148,35 @@ function finishDraft(state: MatchState, ctx: DraftCtx): MatchState {
   const rosters: Record<string, Roster> = {}
   for (const player of draft.players) rosters[player.id] = draft.teams[player.id].roster
 
-  // Pad the league with CPU filler franchises drafted from the leftovers.
+  // Generate the opposition from the leftovers: league fillers pad a
+  // friends match; a chase run gets a full slate of strong opponents.
+  const chase = state.config.format === 'chase'
+  const targetSize = chase ? 1 + CHASE_OPPONENTS : state.config.leagueSize
   const entries = [...state.entries]
-  let fillerState = draft
+  const drafted = new Set(draft.draftedPids)
   const names = shuffle(mulberry32(hashSeed(`${state.config.seed}:fillers`)), FILLER_NAMES)
   let fillerIndex = 0
-  while (entries.length < state.config.leagueSize) {
-    const filler = draftFillerTeam(fillerState, ctx, hashSeed(`${state.config.seed}:filler:${fillerIndex}`))
+  while (entries.length < targetSize) {
+    const filler = draftFillerTeam(drafted, ctx, hashSeed(`${state.config.seed}:filler:${fillerIndex}`), chase ? 0.8 : 0.6)
     const id = `filler-${fillerIndex}`
     entries.push({ id, name: names[fillerIndex % names.length], isCpu: true, isFiller: true })
     rosters[id] = filler.roster
-    fillerState = { ...fillerState, draftedPids: [...fillerState.draftedPids, ...filler.draftedPids] }
+    for (const pid of filler.draftedPids) drafted.add(pid)
     fillerIndex++
   }
 
   return { ...state, entries, rosters, phase: 'preview' }
+}
+
+// The chase schedule: 82 games, all involving the runner, cycling through
+// the opposition with alternating home court.
+function chaseSchedule(myId: string, opponentIds: string[]): { homeId: string; awayId: string }[] {
+  const games: { homeId: string; awayId: string }[] = []
+  for (let g = 0; g < CHASE_GAMES; g++) {
+    const opp = opponentIds[g % opponentIds.length]
+    games.push(g % 2 === 0 ? { homeId: myId, awayId: opp } : { homeId: opp, awayId: myId })
+  }
+  return games
 }
 
 // Seed order: season format seeds by standings later; series format seeds by
@@ -246,6 +266,18 @@ function simSeasonStep(state: MatchState): MatchState {
   let next: MatchState = { ...state, season: nextSeason }
 
   if (nextSeason.played.length >= nextSeason.schedule.length) {
+    if (state.config.format === 'chase') {
+      // The run is over: a perfect 82-0 takes the ring, anything else just
+      // posts the record.
+      const myId = state.entries.find((e) => !e.isFiller)!.id
+      const myRow = nextSeason.standings.find((r) => r.teamId === myId)!
+      return {
+        ...next,
+        phase: 'done',
+        championId: myRow.losses === 0 ? myId : null,
+        seasonMvp: computeMvp(nextSeason.played.filter((g) => [g.home.teamId, g.away.teamId].includes(myId))),
+      }
+    }
     const table = sortStandings(nextSeason.standings).map((r) => r.teamId)
     next = startPlayoffs({ ...next, seasonMvp: computeMvp(nextSeason.played) }, table)
   }
@@ -285,6 +317,12 @@ export function applyMatchAction(state: MatchState, action: MatchAction, ctx: Dr
 
   if (action.type === 'BEGIN_COMPETITION') {
     if (state.phase !== 'preview') return state
+    if (state.config.format === 'chase') {
+      const myId = state.entries.find((e) => !e.isFiller)!.id
+      const opponents = state.entries.filter((e) => e.isFiller).map((e) => e.id)
+      const season = initSeason(state.entries.map((e) => e.id), 0)
+      return { ...state, phase: 'season', season: { ...season, schedule: chaseSchedule(myId, opponents) } }
+    }
     if (state.config.format === 'season') {
       const teamIds = state.entries.map((e) => e.id)
       return {

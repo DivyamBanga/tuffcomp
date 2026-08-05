@@ -1,16 +1,14 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { loadCards } from '../data/loadCards'
-import { canFieldStarters, rosterCards, STARTER_SLOTS } from '../engine/lineup'
+import { canFieldStarters, canPlaySlot, rosterCards, STARTER_SLOTS } from '../engine/lineup'
 import type { Card } from '../types'
 import {
   advanceCpuTurns,
   applyAction,
   cpuChoose,
   currentPlayerId,
-  currentRound,
   draftFillerTeam,
   initDraft,
-  REROLLS_PER_PLAYER,
   ROUNDS,
   type DraftCtx,
   type DraftPlayer,
@@ -31,8 +29,7 @@ beforeAll(async () => {
   ctx = { pool }
 })
 
-// Plays every turn with the CPU heuristic regardless of isCpu - a fast way
-// to drive a full legal draft in tests.
+// Plays every turn off the board - a fast way to drive a full legal draft.
 function playOut(state: DraftState): DraftState {
   let current = state
   while (!current.done) {
@@ -41,63 +38,27 @@ function playOut(state: DraftState): DraftState {
   return current
 }
 
-describe('initDraft', () => {
-  it('builds a snake order and opens with a round-1 offer', () => {
-    const state = initDraft('tiers', HUMANS, 42, ctx)
+describe('turn and board rules (grid input)', () => {
+  it('builds a snake order and opens with a themed board', () => {
+    const state = initDraft('themes', HUMANS, 42, ctx, 'grid')
     expect(state.order.length).toBe(ROUNDS * 3)
     expect(state.order.slice(0, 6)).toEqual(['p1', 'p2', 'p3', 'p3', 'p2', 'p1'])
-    expect(currentRound(state)).toBe(1)
     expect(state.offer).not.toBeNull()
     expect(state.offer!.cards.length).toBeGreaterThan(0)
-    expect(['GOAT', 'SUPERSTAR']).toContain(state.offer!.tier)
   })
 
-  it('is deterministic: same seed, same opening offer', () => {
-    const a = initDraft('tiers', HUMANS, 7, ctx)
-    const b = initDraft('tiers', HUMANS, 7, ctx)
-    expect(a.offer!.cards.map((c) => c.id)).toEqual(b.offer!.cards.map((c) => c.id))
-  })
-})
-
-describe('turn and offer rules', () => {
-  it('rejects actions from a player out of turn', () => {
-    const state = initDraft('tiers', HUMANS, 42, ctx)
+  it('rejects actions from a player out of turn and cards off the board', () => {
+    const state = initDraft('themes', HUMANS, 42, ctx, 'grid')
     const stolen = applyAction(state, { type: 'TAKE', playerId: 'p2', cardId: state.offer!.cards[0].id }, ctx)
     expect(stolen).toBe(state)
-  })
-
-  it('rejects taking a card that is not in the offer', () => {
-    const state = initDraft('tiers', HUMANS, 42, ctx)
     const offIds = new Set(state.offer!.cards.map((c) => c.id))
     const outsider = pool.find((c) => !offIds.has(c.id))!
     const cheated = applyAction(state, { type: 'TAKE', playerId: 'p1', cardId: outsider.id }, ctx)
     expect(cheated).toBe(state)
   })
 
-  it('TAKE places the card, advances the turn, and generates the next offer', () => {
-    const state = initDraft('tiers', HUMANS, 42, ctx)
-    const card = state.offer!.cards[0]
-    const next = applyAction(state, { type: 'TAKE', playerId: 'p1', cardId: card.id }, ctx)
-    expect(rosterCards(next.teams.p1.roster).map((c) => c.id)).toContain(card.id)
-    expect(currentPlayerId(next)).toBe('p2')
-    expect(next.offer!.forPlayerId).toBe('p2')
-    expect(next.draftedPids).toContain(card.pid)
-  })
-
-  it('REROLL burns a token, changes the offer, and stops at zero', () => {
-    let state = initDraft('tiers', HUMANS, 42, ctx)
-    const firstOffer = state.offer!.cards.map((c) => c.id)
-    state = applyAction(state, { type: 'REROLL', playerId: 'p1' }, ctx)
-    expect(state.teams.p1.rerollsLeft).toBe(REROLLS_PER_PLAYER - 1)
-    expect(state.offer!.cards.map((c) => c.id)).not.toEqual(firstOffer)
-    state = applyAction(state, { type: 'REROLL', playerId: 'p1' }, ctx)
-    expect(state.teams.p1.rerollsLeft).toBe(0)
-    const exhausted = applyAction(state, { type: 'REROLL', playerId: 'p1' }, ctx)
-    expect(exhausted).toBe(state)
-  })
-
   it('never offers an already-drafted person, in any season', () => {
-    let state = initDraft('tiers', HUMANS, 11, ctx)
+    let state = initDraft('themes', HUMANS, 11, ctx, 'grid')
     for (let i = 0; i < 12 && !state.done; i++) {
       const drafted = new Set(state.draftedPids)
       for (const card of state.offer!.cards) {
@@ -106,40 +67,49 @@ describe('turn and offer rules', () => {
       state = applyAction(state, cpuChoose(state), ctx)
     }
   })
-})
 
-describe('full tiered draft', () => {
-  it('ends with every team holding 8 cards that can field five starters', () => {
-    const state = playOut(initDraft('tiers', HUMANS, 99, ctx))
+  it('completes with legal teams and one person per league', () => {
+    const state = playOut(initDraft('themes', HUMANS, 99, ctx, 'grid'))
     expect(state.done).toBe(true)
     for (const playerId of ['p1', 'p2', 'p3']) {
       const cards = rosterCards(state.teams[playerId].roster)
       expect(cards.length).toBe(ROUNDS)
       expect(canFieldStarters(cards)).toBe(true)
-      for (const slot of STARTER_SLOTS) {
-        expect(state.teams[playerId].roster[slot]).not.toBeNull()
-      }
+      for (const slot of STARTER_SLOTS) expect(state.teams[playerId].roster[slot]).not.toBeNull()
     }
-  })
-
-  it('no person appears on two teams', () => {
-    const state = playOut(initDraft('tiers', HUMANS, 123, ctx))
     const allPids = ['p1', 'p2', 'p3'].flatMap((id) => rosterCards(state.teams[id].roster).map((c) => c.pid))
     expect(new Set(allPids).size).toBe(allPids.length)
   })
+})
 
-  it('every team gets early-round star power (round 1 is GOAT or SUPERSTAR)', () => {
-    const state = playOut(initDraft('tiers', HUMANS, 7, ctx))
-    for (const playerId of ['p1', 'p2', 'p3']) {
-      const cards = rosterCards(state.teams[playerId].roster)
-      expect(cards.some((c) => c.tier === 'GOAT' || c.tier === 'SUPERSTAR')).toBe(true)
+describe('slot control', () => {
+  it('a chosen legal open slot wins; an illegal one falls back to auto', () => {
+    const state = initDraft('themes', HUMANS, 42, ctx, 'grid')
+    const card = state.offer!.cards[0]
+    const legal = STARTER_SLOTS.find((slot) => canPlaySlot(card, slot))
+    if (legal) {
+      const placed = applyAction(state, { type: 'TAKE', playerId: 'p1', cardId: card.id, slot: legal }, ctx)
+      expect(placed.teams.p1.roster[legal]!.id).toBe(card.id)
     }
+    const illegal = STARTER_SLOTS.find((slot) => !canPlaySlot(card, slot))
+    if (illegal) {
+      const auto = applyAction(state, { type: 'TAKE', playerId: 'p1', cardId: card.id, slot: illegal }, ctx)
+      expect(rosterCards(auto.teams.p1.roster).map((c) => c.id)).toContain(card.id)
+      expect(auto.teams.p1.roster[illegal]?.id).not.toBe(card.id)
+    }
+  })
+
+  it('the bench is a valid chosen slot', () => {
+    const state = initDraft('themes', HUMANS, 42, ctx, 'grid')
+    const card = state.offer!.cards[0]
+    const placed = applyAction(state, { type: 'TAKE', playerId: 'p1', cardId: card.id, slot: 'B2' }, ctx)
+    expect(placed.teams.p1.roster.B2!.id).toBe(card.id)
   })
 })
 
 describe('MOVE', () => {
   it('swaps two legally-compatible slots and rejects illegal moves', () => {
-    const state = playOut(initDraft('tiers', HUMANS, 33, ctx))
+    const state = playOut(initDraft('themes', HUMANS, 33, ctx, 'grid'))
     const team = state.teams.p1
     const pg = team.roster.PG!
     const b1 = team.roster.B1!
@@ -147,26 +117,21 @@ describe('MOVE', () => {
     if (b1 === null || ['PG', 'SG'].includes(b1.pos) || b1.pos2 === 'PG' || b1.pos2 === 'SG') {
       expect(moved.teams.p1.roster.B1!.id).toBe(pg.id)
     }
-    const centerToPg = applyAction(
-      state,
-      { type: 'MOVE', playerId: 'p1', from: 'C', to: 'PG' },
-      ctx,
-    )
     const center = state.teams.p1.roster.C!
     if (Math.abs(['PG', 'SG', 'SF', 'PF', 'C'].indexOf(center.pos) - 0) > 1 && center.pos2 === null) {
-      expect(centerToPg).toBe(state)
+      expect(applyAction(state, { type: 'MOVE', playerId: 'p1', from: 'C', to: 'PG' }, ctx)).toBe(state)
     }
   })
 })
 
-describe('solo mode with CPU opponents', () => {
+describe('CPU turns', () => {
   it('advanceCpuTurns plays CPU turns and pauses on the human', () => {
     const players: DraftPlayer[] = [
       { id: 'me', name: 'Div', isCpu: false },
       { id: 'cpu1', name: 'BOT A', isCpu: true },
       { id: 'cpu2', name: 'BOT B', isCpu: true },
     ]
-    let state = initDraft('tiers', players, 13, ctx)
+    let state = initDraft('themes', players, 13, ctx, 'grid')
     expect(currentPlayerId(state)).toBe('me')
     state = applyAction(state, { type: 'TAKE', playerId: 'me', cardId: state.offer!.cards[0].id }, ctx)
     state = advanceCpuTurns(state, ctx)
@@ -178,13 +143,22 @@ describe('solo mode with CPU opponents', () => {
 })
 
 describe('draftFillerTeam', () => {
-  it('builds a legal 8-man team that avoids all drafted persons', () => {
-    const state = playOut(initDraft('tiers', HUMANS, 55, ctx))
-    const filler = draftFillerTeam(state, ctx, 777)
+  it('builds legal opposition that avoids all drafted persons, stronger at higher bias', () => {
+    const state = playOut(initDraft('themes', HUMANS, 55, ctx, 'grid'))
+    const drafted = new Set(state.draftedPids)
+    const filler = draftFillerTeam(drafted, ctx, 777, 0.6)
     const cards = rosterCards(filler.roster)
     expect(cards.length).toBe(ROUNDS)
     expect(canFieldStarters(cards)).toBe(true)
-    const drafted = new Set(state.draftedPids)
     for (const card of cards) expect(drafted.has(card.pid)).toBe(false)
+
+    const avg = (seed: number, bias: number) => {
+      const team = draftFillerTeam(new Set<string>(), ctx, seed, bias)
+      const cs = rosterCards(team.roster)
+      return cs.reduce((s, c) => s + c.ovr, 0) / cs.length
+    }
+    const strong = Array.from({ length: 6 }, (_, i) => avg(i, 0.85)).reduce((a, b) => a + b, 0) / 6
+    const loose = Array.from({ length: 6 }, (_, i) => avg(i, 0.2)).reduce((a, b) => a + b, 0) / 6
+    expect(strong).toBeGreaterThan(loose)
   })
 })

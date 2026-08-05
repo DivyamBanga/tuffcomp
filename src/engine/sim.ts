@@ -52,7 +52,7 @@ export function simProfile(teamId: string, roster: Roster): TeamSimProfile {
     0.22 * weightedAttrAvg(roster, 'rb')
 
   offense += (evaluation.chemistry - 50) * 0.07 - usageOverload(roster) * 0.35
-  defense += (evaluation.balance - 50) * 0.05
+  defense += (evaluation.balance - 50) * 0.07
 
   const players: SimPlayer[] = []
   for (const slot of ALL_SLOTS) {

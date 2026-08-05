@@ -4,24 +4,23 @@ import { currentRound, ROUNDS, STRIKES_PER_PLAYER, type DraftState, type TypeFee
 import { THEMES, suggestNames, themeById } from '../game/themes'
 import { useGame } from '../game/store'
 import type { MatchState } from '../game/match'
-import { ALL_SLOTS } from '../engine/lineup'
+import { ALL_SLOTS, type SlotId } from '../engine/lineup'
 import type { Card } from '../types'
-import { Btn, Headshot, MiniCard, PlayerCard, Sheet, StatusLine } from './components'
+import { Btn, MiniCard, PlayerCard, Sheet, StatusLine } from './components'
 
-const SPIN_MS = 1150
 const REVEAL_MS = 1400
 
 function whiffLine(feedback: TypeFeedback): string {
   const name = feedback.matchedName?.toUpperCase()
   switch (feedback.outcome) {
     case 'no-match':
-      return `NO PLAYER FOUND FOR “${feedback.query.toUpperCase()}” · NO STRIKE`
+      return `NO PLAYER FOUND · NO STRIKE`
     case 'off-theme':
-      return `${name} DOESN'T FIT THE THEME · STRIKE`
+      return `${name} DOESN'T FIT · STRIKE`
     case 'taken':
-      return `${name} IS ALREADY GONE · STRIKE`
+      return `${name} IS GONE · STRIKE`
     case 'cant-fit':
-      return `${name} CAN'T FILL YOUR OPEN STARTER SLOTS · STRIKE`
+      return `${name} CAN'T FILL YOUR FIVE · STRIKE`
   }
 }
 
@@ -35,15 +34,14 @@ function StrikeDots({ left }: { left: number }) {
   )
 }
 
-// The draft's one theme deals itself once at the start: decoy labels
-// cycle, then the real theme settles and holds for all 8 rounds.
-function useThemeReveal(themed: boolean) {
-  const [revealing, setRevealing] = useState(themed)
+// The draft's one theme deals itself once at the start.
+function useThemeReveal() {
+  const [revealing, setRevealing] = useState(true)
   const [decoy, setDecoy] = useState('')
   const started = useRef(false)
 
   useEffect(() => {
-    if (!themed || started.current) return
+    if (started.current) return
     started.current = true
     let ticks = 0
     const interval = window.setInterval(() => {
@@ -58,14 +56,47 @@ function useThemeReveal(themed: boolean) {
       window.clearInterval(interval)
       window.clearTimeout(timeout)
     }
-  }, [themed])
+  }, [])
 
   return { revealing, decoy }
 }
 
+// Where should the pick land? AUTO or a tapped open slot.
+function SlotPicker({
+  draft,
+  myId,
+  chosen,
+  onChoose,
+}: {
+  draft: DraftState
+  myId: string
+  chosen: SlotId | null
+  onChoose: (slot: SlotId | null) => void
+}) {
+  const roster = draft.teams[myId].roster
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-1.5">
+      <Btn on={chosen === null} onClick={() => onChoose(null)} className="!px-2.5 !py-1 !text-[10px]">
+        AUTO
+      </Btn>
+      {ALL_SLOTS.map((slot) => (
+        <Btn
+          key={slot}
+          on={chosen === slot}
+          disabled={roster[slot] !== null}
+          onClick={() => onChoose(chosen === slot ? null : slot)}
+          className="!px-2.5 !py-1 !text-[10px]"
+        >
+          {slot}
+        </Btn>
+      ))}
+    </div>
+  )
+}
+
 // ------------------------------------------------------------- type-in form
 
-function TypePickForm({ draft, myId }: { draft: DraftState; myId: string }) {
+function TypePickForm({ draft, myId, slot }: { draft: DraftState; myId: string; slot: SlotId | null }) {
   const { dispatch } = useGame()
   const [query, setQuery] = useState('')
   const [highlight, setHighlight] = useState(-1)
@@ -74,8 +105,8 @@ function TypePickForm({ draft, myId }: { draft: DraftState; myId: string }) {
   const strikes = draft.teams[myId].strikesLeft
   const feedback = draft.lastType?.playerId === myId ? draft.lastType : null
 
-  // Name index for autocomplete - spelling help over ALL players, never
-  // filtered to the theme.
+  // Autocomplete index - spelling help over ALL players, never filtered
+  // to the theme.
   useEffect(() => {
     let live = true
     void loadCards().then((cards) => {
@@ -86,7 +117,6 @@ function TypePickForm({ draft, myId }: { draft: DraftState; myId: string }) {
     }
   }, [])
 
-  // A new pick of mine: clear the slate.
   useEffect(() => {
     setQuery('')
     setHighlight(-1)
@@ -98,7 +128,7 @@ function TypePickForm({ draft, myId }: { draft: DraftState; myId: string }) {
   function callName(name: string) {
     if (name.trim().length < 2) return
     setHighlight(-1)
-    dispatch({ type: 'DRAFT', action: { type: 'TYPE_PICK', playerId: myId, query: name.trim() } })
+    dispatch({ type: 'DRAFT', action: { type: 'TYPE_PICK', playerId: myId, query: name.trim(), ...(slot ? { slot } : {}) } })
   }
 
   function onKeyDown(e: React.KeyboardEvent) {
@@ -116,9 +146,8 @@ function TypePickForm({ draft, myId }: { draft: DraftState; myId: string }) {
   }
 
   return (
-    <div className="mx-auto flex max-w-md flex-col items-center gap-4 py-6">
+    <div className="mx-auto flex max-w-md flex-col items-center gap-3 py-4">
       <div key={feedback?.attempt ?? 0} className={`w-full ${feedback ? 'animate-shake' : ''}`}>
-        <span className="plate plate-faint mb-1 block !text-[9px]">NAME YOUR PICK · BEST FITTING SEASON LANDS</span>
         <div className="relative">
           <div className="flex items-end gap-3">
             <input
@@ -129,7 +158,7 @@ function TypePickForm({ draft, myId }: { draft: DraftState; myId: string }) {
                 setHighlight(-1)
               }}
               onKeyDown={onKeyDown}
-              placeholder="steph curry"
+              placeholder="type a name"
               autoFocus
               autoComplete="off"
               className="field headline flex-1 text-2xl"
@@ -159,13 +188,9 @@ function TypePickForm({ draft, myId }: { draft: DraftState; myId: string }) {
         </div>
       </div>
       <div className="flex w-full items-center justify-between">
-        <span className="flex items-center gap-2">
-          <span className="plate !text-[9px]">STRIKES</span>
-          <StrikeDots left={strikes} />
-        </span>
-        <span className="plate plate-faint !text-[8.5px]">SPELLING HELP ONLY · IT WON'T SAY WHO FITS</span>
+        <StrikeDots left={strikes} />
+        {feedback && <p className="plate !text-[10px] !tracking-[0.1em] text-ink">{whiffLine(feedback)}</p>}
       </div>
-      {feedback && <p className="plate !text-[10px] !tracking-[0.1em] text-ink">{whiffLine(feedback)}</p>}
     </div>
   )
 }
@@ -180,38 +205,13 @@ export function DraftScreen({ match }: { match: MatchState }) {
   const myTurn = turnId === myId
   const round = currentRound(draft)
   const offer = draft.offer
-  const myTeam = draft.teams[myId]
-  const themed = draft.mode === 'themes'
-  const theme = themed ? themeById(draft.theme!) : null
+  const theme = themeById(draft.theme!)
+  const solo = draft.players.length === 1
 
-  const { revealing, decoy } = useThemeReveal(themed)
+  const { revealing, decoy } = useThemeReveal()
+  const [chosenSlot, setChosenSlot] = useState<SlotId | null>(null)
 
-  // Tiers mode: slot-machine intro every time a fresh offer lands for me.
-  const [spinning, setSpinning] = useState(false)
-  const [flicker, setFlicker] = useState<Card | null>(null)
-  const lastOfferKey = useRef('')
-
-  useEffect(() => {
-    if (themed) return
-    const key = offer ? `${offer.forPlayerId}:${draft.spinCount}` : ''
-    if (!offer || key === lastOfferKey.current) return
-    lastOfferKey.current = key
-    if (offer.forPlayerId !== myId) return
-    setSpinning(true)
-    let ticks = 0
-    const interval = window.setInterval(() => {
-      setFlicker(offer.cards[ticks % offer.cards.length])
-      ticks++
-    }, 110)
-    const timeout = window.setTimeout(() => {
-      window.clearInterval(interval)
-      setSpinning(false)
-    }, SPIN_MS)
-    return () => {
-      window.clearInterval(interval)
-      window.clearTimeout(timeout)
-    }
-  }, [offer, draft.spinCount, myId, themed])
+  useEffect(() => setChosenSlot(null), [draft.pickIndex])
 
   const lastPickPlayer = draft.players.find((p) => p.id === draft.lastPick?.playerId)
   const lastTypePlayer = draft.players.find((p) => p.id === draft.lastType?.playerId)
@@ -219,110 +219,89 @@ export function DraftScreen({ match }: { match: MatchState }) {
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-4 px-3 py-5">
       <StatusLine
-        text={`ROUND ${round} OF ${ROUNDS} · PICK ${draft.pickIndex + 1}/${draft.order.length} · ${
-          myTurn ? 'YOU ARE ON THE CLOCK' : `${turnPlayer?.name ?? '...'} IS ON THE CLOCK`
+        text={`PICK ${draft.pickIndex + 1}/${draft.order.length} · R${round}/${ROUNDS}${
+          myTurn ? ' · YOU' : ` · ${turnPlayer?.name ?? ''}`
         }`}
       />
 
-      <Sheet
-        title={themed ? `THEME DRAFT · ONE THEME, ALL ${ROUNDS} ROUNDS` : `ROUND ${round} · ${String(offer?.tier ?? 'MYSTERY')} SPIN`}
-        right={
-          <span className={`plate !text-[9px] ${myTurn ? 'animate-pulse text-hot' : ''}`}>
-            {myTurn ? '▶ YOUR CALL' : `${turnPlayer?.name ?? ''}'S CALL`}
-          </span>
-        }
-      >
-        {themed && (
-          <div className="mb-2 text-center">
-            {revealing ? (
-              <p className="headline text-3xl text-faint sm:text-4xl">{decoy || '· · ·'}</p>
-            ) : (
-              <>
-                <p className="headline text-3xl text-ink sm:text-4xl">{theme!.label}</p>
-                <p className="mt-1.5 text-[13px] text-dim">{theme!.detail}</p>
-              </>
-            )}
-          </div>
-        )}
+      <Sheet>
+        <div className="mb-2 text-center">
+          {revealing ? (
+            <p className="headline text-3xl text-faint sm:text-4xl">{decoy || '· · ·'}</p>
+          ) : (
+            <>
+              <p className="headline text-3xl text-ink sm:text-4xl">{theme.label}</p>
+              <p className="mt-1.5 text-[13px] text-dim">{theme.detail}</p>
+            </>
+          )}
+        </div>
 
-        {themed && revealing ? (
-          <p className="plate animate-pulse py-8 text-center !text-[10px]">DEALING THE DRAFT'S THEME…</p>
-        ) : themed && myTurn && !offer ? (
-          <TypePickForm draft={draft} myId={myId} />
-        ) : !themed && spinning && myTurn ? (
-          <div className="flex h-64 flex-col items-center justify-center gap-4">
-            <div className="sheet h-36 w-36 overflow-hidden">
-              {flicker && <Headshot card={flicker} className="h-full w-full" />}
-            </div>
-            <p className="plate animate-pulse !text-[10px] text-hot">DEALING…</p>
-          </div>
-        ) : offer ? (
+        {revealing ? (
+          <p className="plate animate-pulse py-8 text-center !text-[10px]">DEALING…</p>
+        ) : (
           <>
-            {offer.themeFallback && (
-              <p className="plate mb-3 text-center !text-[9px]">THEME EXHAUSTED FOR YOUR NEEDS · OPEN BOARD</p>
-            )}
-            {themed && myTurn && myTeam.strikesLeft <= 0 && !offer.themeFallback && (
-              <p className="plate mb-3 text-center !text-[9px]">OUT OF STRIKES · THE BOARD BAILS YOU OUT</p>
-            )}
-            <div className="flex flex-wrap justify-center gap-3">
-              {offer.cards.map((card, i) => (
-                <PlayerCard
-                  key={card.id}
-                  card={card}
-                  delayMs={i * 60}
-                  onClick={myTurn ? () => dispatch({ type: 'DRAFT', action: { type: 'TAKE', playerId: myId, cardId: card.id } }) : undefined}
-                />
-              ))}
-            </div>
-            {myTurn && !themed && (
-              <div className="mt-4 flex items-center justify-center gap-4">
-                <Btn
-                  disabled={myTeam.rerollsLeft <= 0}
-                  onClick={() => dispatch({ type: 'DRAFT', action: { type: 'REROLL', playerId: myId } })}
-                >
-                  ↻ REROLL · {myTeam.rerollsLeft} LEFT
-                </Btn>
-                <span className="plate plate-faint !text-[9px]">TAP A CARD TO DRAFT</span>
+            {myTurn && !draft.done && (
+              <div className="mb-3">
+                <SlotPicker draft={draft} myId={myId} chosen={chosenSlot} onChoose={setChosenSlot} />
               </div>
             )}
-            {myTurn && themed && <p className="plate plate-faint mt-4 text-center !text-[9px]">TAP A CARD TO DRAFT</p>}
-          </>
-        ) : null}
 
-        {!myTurn && !revealing && (
-          <div className="mt-2 grid gap-1 text-center">
-            <span className="plate animate-pulse !text-[9px]">WAITING FOR {turnPlayer?.name?.toUpperCase() ?? '...'}</span>
-            {themed && draft.lastType && lastTypePlayer && (
-              <span className="plate plate-faint !text-[9px]">
-                {lastTypePlayer.name.toUpperCase()} TRIED “{draft.lastType.query.toUpperCase()}” ·{' '}
-                {draft.lastType.outcome === 'no-match' ? 'WHO?' : draft.lastType.outcome.replace('-', ' ').toUpperCase()}
-              </span>
+            {myTurn && !offer ? (
+              <TypePickForm draft={draft} myId={myId} slot={chosenSlot} />
+            ) : offer ? (
+              <>
+                {offer.themeFallback && <p className="plate mb-3 text-center !text-[9px]">OPEN BOARD</p>}
+                <div className="flex flex-wrap justify-center gap-3">
+                  {offer.cards.map((card, i) => (
+                    <PlayerCard
+                      key={card.id}
+                      card={card}
+                      delayMs={i * 60}
+                      onClick={
+                        myTurn
+                          ? () =>
+                              dispatch({
+                                type: 'DRAFT',
+                                action: { type: 'TAKE', playerId: myId, cardId: card.id, ...(chosenSlot ? { slot: chosenSlot } : {}) },
+                              })
+                          : undefined
+                      }
+                    />
+                  ))}
+                </div>
+              </>
+            ) : null}
+
+            {!myTurn && (
+              <div className="mt-2 grid gap-1 text-center">
+                <span className="plate animate-pulse !text-[9px]">{turnPlayer?.name?.toUpperCase() ?? '...'} IS UP</span>
+                {draft.lastType && lastTypePlayer && (
+                  <span className="plate plate-faint !text-[9px]">
+                    {lastTypePlayer.name.toUpperCase()} · “{draft.lastType.query.toUpperCase()}” ·{' '}
+                    {draft.lastType.outcome === 'no-match' ? 'WHO?' : draft.lastType.outcome.replace('-', ' ').toUpperCase()}
+                  </span>
+                )}
+                {draft.lastPick && lastPickPlayer && (
+                  <span className="plate plate-faint !text-[9px]">
+                    {lastPickPlayer.name.toUpperCase()} → '{String(draft.lastPick.season).slice(2)}{' '}
+                    {draft.lastPick.name.toUpperCase()} · {draft.lastPick.ovr}
+                  </span>
+                )}
+              </div>
             )}
-            {draft.lastPick && lastPickPlayer && (
-              <span className="plate plate-faint !text-[9px]">
-                LAST PICK: {lastPickPlayer.name.toUpperCase()} TOOK '{String(draft.lastPick.season).slice(2)}{' '}
-                {draft.lastPick.name.toUpperCase()} · {draft.lastPick.ovr} OVR
-              </span>
-            )}
-          </div>
+          </>
         )}
       </Sheet>
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className={`grid gap-3 ${solo ? '' : 'md:grid-cols-2'}`}>
         {draft.players.map((p) => {
           const team = draft.teams[p.id]
           return (
             <Sheet
               key={p.id}
-              title={`${p.name}${p.id === myId ? ' (YOU)' : ''}${p.isCpu ? ' · CPU' : ''}`}
-              right={
-                themed ? (
-                  p.isCpu ? undefined : <StrikeDots left={team.strikesLeft} />
-                ) : (
-                  <span className="plate plate-faint !text-[9px]">↻ {team.rerollsLeft}</span>
-                )
-              }
-              className={p.id === turnId ? '!border-hot' : ''}
+              title={p.id === myId ? 'YOUR SQUAD' : p.name}
+              right={p.isCpu ? undefined : <StrikeDots left={team.strikesLeft} />}
+              className={p.id === turnId && !solo ? '!border-hot' : ''}
             >
               <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
                 {ALL_SLOTS.map((slot) => (

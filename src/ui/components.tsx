@@ -137,30 +137,22 @@ export function PlayerCard({
       onClick={onClick}
       disabled={!onClick}
       style={{ animationDelay: `${delayMs}ms` }}
-      className={`pcard pcard-${card.tier} animate-deal relative w-40 shrink-0 sm:w-44 ${
+      className={`pcard animate-deal relative w-40 shrink-0 sm:w-44 ${
         onClick ? 'pcard-take' : ''
       } ${selected ? 'gold-line' : ''} ${dimmed ? 'opacity-35 grayscale' : ''}`}
     >
-      <div className="flex items-baseline justify-between px-2.5 pt-2 pb-1.5">
-        <span className={`plate !text-[9px] ${card.tier === 'GOAT' ? 'gold' : ''}`}>{card.tier}</span>
-        <span className="num text-xl leading-none text-ink">
+      <div className="photo-well">
+        <Headshot card={card} className="h-28 w-full sm:h-32" />
+        <span className="num absolute right-1.5 top-1 text-2xl font-bold text-ink [text-shadow:0_1px_4px_rgba(0,0,0,0.8)]">
           {card.ovr}
-          <span className="ml-0.5 text-[9px] text-faint">OVR</span>
         </span>
       </div>
-      <div className="photo-well border-t border-line">
-        <Headshot card={card} className="h-24 w-full sm:h-28" />
-      </div>
-      <div className="px-2.5 pb-2.5 pt-2">
+      <div className="px-2.5 pb-2 pt-1.5">
         <p className="headline truncate text-[13px] leading-tight text-ink">{card.name}</p>
-        <p className="plate plate-faint mt-1 !text-[9px]">
-          '{String(card.season).slice(2)} {card.teams[0]} · {card.pos}
-          {card.hof ? ' · HOF' : ''}
-        </p>
-        <div className="num mt-1.5 flex justify-between text-[10px] text-dim">
-          <span>{card.stats.pts.toFixed(1)}p</span>
-          <span>{card.stats.reb.toFixed(1)}r</span>
-          <span>{card.stats.ast.toFixed(1)}a</span>
+        <div className="num mt-1 flex justify-between text-[10px] text-dim">
+          <span>'{String(card.season).slice(2)} {card.teams[0]}</span>
+          <span>{card.pos}</span>
+          <span>{card.stats.pts.toFixed(0)}·{card.stats.reb.toFixed(0)}·{card.stats.ast.toFixed(0)}</span>
         </div>
       </div>
     </button>
@@ -196,9 +188,7 @@ export function MiniCard({
             <span className="block max-w-24 truncate text-[11px] font-semibold leading-tight text-ink">
               {card.name.split(' ').at(-1)}
             </span>
-            <span className={`num block text-[9px] leading-tight ${card.tier === 'GOAT' ? 'gold' : 'text-dim'}`}>
-              {card.ovr}
-            </span>
+            <span className="num block text-[9px] leading-tight text-dim">{card.ovr}</span>
           </span>
         </>
       ) : (

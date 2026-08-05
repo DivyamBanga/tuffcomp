@@ -13,7 +13,7 @@ export type Screen = 'home' | 'setup' | 'join' | 'lobby' | 'game' | 'trophies'
 export type SessionMode = 'solo' | 'host' | 'guest'
 export type NetStatus = 'idle' | 'connecting' | 'connected' | 'error'
 
-export const DEFAULT_CONFIG: MatchConfig = { mode: 'tiers', format: 'season', leagueSize: 4, seed: 0, input: 'type' }
+export const DEFAULT_CONFIG: MatchConfig = { mode: 'themes', format: 'season', leagueSize: 4, seed: 0, input: 'type' }
 
 interface GameStore {
   screen: Screen
@@ -22,7 +22,6 @@ interface GameStore {
   myName: string
   pool: Card[] | null
   config: MatchConfig
-  cpuDrafters: number
   match: MatchState | null
   lobby: LobbySnapshot | null
   netStatus: NetStatus
@@ -35,14 +34,13 @@ interface GameStore {
 
   setName: (name: string) => void
   setConfig: (config: Partial<MatchConfig>) => void
-  setCpuDrafters: (n: number) => void
   armJudge: (key: string) => void
   disarmJudge: () => void
   goHome: () => void
   goSetup: (mode: 'solo' | 'host') => void
   goJoin: () => void
   goTrophies: () => void
-  startSolo: () => Promise<void>
+  startSolo: (input: MatchConfig['input']) => Promise<void>
   createRoom: () => Promise<void>
   hostAddCpu: () => void
   hostStart: () => void
@@ -109,7 +107,6 @@ export const useGame = create<GameStore>((set, get) => {
     myName: savedName(),
     pool: null,
     config: { ...DEFAULT_CONFIG },
-    cpuDrafters: 1,
     match: null,
     lobby: null,
     netStatus: 'idle',
@@ -126,7 +123,6 @@ export const useGame = create<GameStore>((set, get) => {
     },
 
     setConfig: (partial) => set({ config: { ...get().config, ...partial } }),
-    setCpuDrafters: (n) => set({ cpuDrafters: n }),
 
     armJudge: (key) => {
       saveJudgeKey(key)
@@ -146,16 +142,20 @@ export const useGame = create<GameStore>((set, get) => {
     goJoin: () => set({ screen: 'join', sessionMode: 'guest', netError: null }),
     goTrophies: () => set({ screen: 'trophies' }),
 
-    startSolo: async () => {
+    // Solo is the chase: draft under the theme, then run 82 games and
+    // post a record.
+    startSolo: async (input) => {
       const pool = await ensurePool(get, set)
       const ctx: DraftCtx = { pool }
-      const { config, cpuDrafters, myId, myName } = get()
-      const seeded: MatchConfig = { ...config, seed: Math.floor(Math.random() * 2 ** 31) }
-      const players = [
-        { id: myId, name: myName || 'YOU', isCpu: false },
-        ...Array.from({ length: cpuDrafters }, (_, i) => ({ id: `cpu-${i}`, name: `BOT ${String.fromCharCode(65 + i)}`, isCpu: true })),
-      ]
-      const match = initMatch(seeded, players, ctx)
+      const { myId, myName } = get()
+      const config: MatchConfig = {
+        mode: 'themes',
+        format: 'chase',
+        leagueSize: 1,
+        seed: Math.floor(Math.random() * 2 ** 31),
+        input,
+      }
+      const match = initMatch(config, [{ id: myId, name: myName || 'YOU', isCpu: false }], ctx)
       set({ match, screen: 'game', trophySaved: false })
     },
 
@@ -254,7 +254,9 @@ export const useGame = create<GameStore>((set, get) => {
         return
       }
       set({ autoSimming: true })
-      autoSimTimer = window.setInterval(tick, 650)
+      // The chase rips through its 82 games; league sims keep suspense.
+      const cadence = get().match?.config.format === 'chase' ? 70 : 650
+      autoSimTimer = window.setInterval(tick, cadence)
     },
   }
 })

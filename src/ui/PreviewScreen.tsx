@@ -117,10 +117,12 @@ export function PreviewScreen({ match }: { match: MatchState }) {
           <>
             <Btn primary onClick={() => void startCompetition()} disabled={judging}>
               {judging
-                ? 'THE SCOUT IS WATCHING FILM…'
-                : match.config.format === 'season'
-                  ? 'TIP OFF THE SEASON →'
-                  : 'START THE PLAYOFFS →'}
+                ? 'SCOUT IS WATCHING FILM…'
+                : match.config.format === 'chase'
+                  ? 'CHASE 82-0 →'
+                  : match.config.format === 'season'
+                    ? 'TIP OFF →'
+                    : 'PLAYOFFS →'}
             </Btn>
             {judgeArmed && !match.judge && !judging && (
               <span className="plate plate-faint !text-[8.5px]">AI SCOUT ARMED · JUDGES EVERY TEAM AT TIP-OFF</span>

@@ -160,9 +160,63 @@ function useGameSelection(count: number): [number, (i: number) => void] {
   return [selected, setSelected]
 }
 
+// ------------------------------------------------------------------ chase
+
+// The 82-0 run: one big record, one button, every loss stings.
+function ChaseScreen({ match }: { match: MatchState }) {
+  const { dispatch, simAllRemaining, autoSimming } = useGame()
+  const season = match.season!
+  const me = match.entries.find((e) => !e.isFiller)!
+  const myRow = season.standings.find((r) => r.teamId === me.id)!
+  const played = season.played.length
+  const total = season.schedule.length
+
+  const logged: LoggedGame[] = season.played.map((result, i) => ({ label: `G${i + 1}`, result }))
+  const [selected, setSelected] = useGameSelection(logged.length)
+  const shown = logged[selected] ?? null
+
+  return (
+    <div className="mx-auto flex min-h-screen w-full max-w-2xl flex-col justify-center gap-4 px-3 py-5">
+      <div className="animate-rise text-center">
+        <p className="num text-7xl font-bold text-ink sm:text-8xl">
+          {myRow.wins}
+          <span className="text-faint">-</span>
+          <span className={myRow.losses > 0 ? 'text-dim' : 'gold'}>{myRow.losses}</span>
+        </p>
+        <div className="mx-auto mt-3 h-[3px] w-64 border border-line">
+          <div
+            className={`h-full transition-all duration-200 ${myRow.losses === 0 ? 'bg-gold' : 'bg-ink'}`}
+            style={{ width: `${(played / total) * 100}%` }}
+          />
+        </div>
+        <p className="num mt-1.5 text-[10px] text-faint">
+          {played}/{total}
+        </p>
+      </div>
+
+      <div className="flex justify-center gap-3">
+        <Btn primary onClick={simAllRemaining}>
+          {autoSimming ? '■ STOP' : '▶ RUN'}
+        </Btn>
+        <Btn onClick={() => dispatch({ type: 'SIM_NEXT' })} disabled={autoSimming}>
+          +1
+        </Btn>
+      </div>
+
+      {shown && <ScoreboardPanel match={match} result={shown.result} title={`GAME ${selected + 1}`} />}
+      <GameLog match={match} games={logged} selected={selected} onSelect={setSelected} />
+    </div>
+  )
+}
+
 // ----------------------------------------------------------------- season
 
 export function SeasonScreen({ match }: { match: MatchState }) {
+  if (match.config.format === 'chase') return <ChaseScreen match={match} />
+  return <LeagueSeasonScreen match={match} />
+}
+
+function LeagueSeasonScreen({ match }: { match: MatchState }) {
   const { dispatch, sessionMode, simAllRemaining, autoSimming } = useGame()
   const season = match.season!
   const canControl = sessionMode !== 'guest'
@@ -337,7 +391,48 @@ export function PlayoffsScreen({ match }: { match: MatchState }) {
 
 // --------------------------------------------------------------- champion
 
+// The end of a chase run: perfection takes the ring, anything else posts
+// the record and dares you to run it back.
+function ChaseEndScreen({ match }: { match: MatchState }) {
+  const { goHome, startSolo } = useGame()
+  const me = match.entries.find((e) => !e.isFiller)!
+  const myRow = match.season!.standings.find((r) => r.teamId === me.id)!
+  const perfect = myRow.losses === 0
+
+  return (
+    <div className="relative mx-auto flex min-h-screen w-full max-w-2xl flex-col items-center justify-center gap-6 overflow-hidden px-4 py-10 text-center">
+      {perfect && <PenStrokes />}
+      {perfect && (
+        <div className="animate-rise relative">
+          <RingSeal size={168} strokeWidth={7} />
+          <span className="num absolute inset-0 flex items-center justify-center text-4xl">🏆</span>
+        </div>
+      )}
+      <p className={`num animate-rise text-8xl font-bold ${perfect ? 'gold' : 'text-ink'}`} style={{ animationDelay: '120ms' }}>
+        {myRow.wins}-{myRow.losses}
+      </p>
+      {perfect && <p className="headline animate-rise text-3xl text-ink">PERFECT SEASON</p>}
+      {match.seasonMvp && (
+        <p className="plate animate-rise !text-[9.5px]" style={{ animationDelay: '250ms' }}>
+          {match.seasonMvp.name.toUpperCase()} · {match.seasonMvp.statLine}
+        </p>
+      )}
+      <div className="animate-rise flex gap-3" style={{ animationDelay: '350ms' }}>
+        <Btn primary onClick={() => void startSolo(match.config.input ?? 'type')}>
+          RUN IT BACK →
+        </Btn>
+        <Btn onClick={goHome}>HOME</Btn>
+      </div>
+    </div>
+  )
+}
+
 export function ChampionScreen({ match }: { match: MatchState }) {
+  if (match.config.format === 'chase') return <ChaseEndScreen match={match} />
+  return <LeagueChampionScreen match={match} />
+}
+
+function LeagueChampionScreen({ match }: { match: MatchState }) {
   const { myId, goHome } = useGame()
   const champion = match.entries.find((e) => e.id === match.championId)
   const itsMe = match.championId === myId

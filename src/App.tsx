@@ -1,8 +1,18 @@
+import { useSyncExternalStore } from 'react'
 import { useGame } from './game/store'
 import { ChampionScreen, PlayoffsScreen, SeasonScreen, TrophiesScreen } from './ui/CompetitionScreens'
 import { DraftScreen } from './ui/DraftScreen'
-import { HomeScreen, JoinScreen, LobbyScreen, SetupScreen } from './ui/MenuScreens'
+import { HomeScreen, JoinScreen, LobbyScreen, ScoutScreen, SetupScreen } from './ui/MenuScreens'
 import { PreviewScreen } from './ui/PreviewScreen'
+
+// The hidden #scout page (arming the AI scout) rides the URL hash.
+const subscribeHash = (onChange: () => void) => {
+  window.addEventListener('hashchange', onChange)
+  return () => window.removeEventListener('hashchange', onChange)
+}
+function useHash(): string {
+  return useSyncExternalStore(subscribeHash, () => window.location.hash)
+}
 
 function GameRouter() {
   const match = useGame((s) => s.match)
@@ -23,6 +33,14 @@ function GameRouter() {
 
 function App() {
   const screen = useGame((s) => s.screen)
+  const hash = useHash()
+  if (hash === '#scout' && screen === 'home') {
+    return (
+      <div className="min-h-screen">
+        <ScoutScreen />
+      </div>
+    )
+  }
   return (
     <div className="min-h-screen">
       {screen === 'home' && <HomeScreen />}

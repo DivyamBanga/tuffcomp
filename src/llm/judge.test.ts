@@ -75,7 +75,7 @@ describe('SET_JUDGE in the match reducer', () => {
   function previewMatch(): MatchState {
     // Hand-build a preview-phase state; ctx is unused by SET_JUDGE.
     const base = initMatch(
-      { mode: 'tiers', format: 'series', leagueSize: 2, seed: 1, input: 'type' },
+      { mode: 'themes', format: 'series', leagueSize: 2, seed: 1, input: 'type' },
       [
         { id: 't1', name: 'DIV', isCpu: false },
         { id: 't2', name: 'JAY', isCpu: false },

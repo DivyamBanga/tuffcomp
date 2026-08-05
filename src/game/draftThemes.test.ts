@@ -141,11 +141,6 @@ describe('typed picks', () => {
     expect(rosterCards(next.teams.p1.roster)[0].id).toBe(take.id)
   })
 
-  it('rerolls do not exist in theme mode', () => {
-    const state = initDraft('themes', HUMANS, 42, ctx, 'grid')
-    const next = applyAction(state, { type: 'REROLL', playerId: 'p1' }, ctx)
-    expect(next).toBe(state)
-  })
 })
 
 describe('full theme drafts', () => {

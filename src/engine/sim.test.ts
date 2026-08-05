@@ -90,6 +90,21 @@ describe('simGame', () => {
   })
 })
 
+describe('fairness', () => {
+  it('identical teams split roughly even with venues alternating', () => {
+    const a = simProfile('A', strongRoster())
+    const b = simProfile('B', strongRoster())
+    let aWins = 0
+    const n = 400
+    for (let seed = 0; seed < n; seed++) {
+      const game = seed % 2 === 0 ? simGame(a, b, seed) : simGame(b, a, seed)
+      if (game.winnerId === 'A') aWins++
+    }
+    expect(aWins / n).toBeGreaterThan(0.42)
+    expect(aWins / n).toBeLessThan(0.58)
+  })
+})
+
 describe('heater nights', () => {
   it('a superstar can pop for 45+, stays realistic, and means hold', () => {
     const star = makeCard({ id: 'the-star', pos: 'SG', ovr: 99, usg: 34, attrs: { sc: 99, sh: 95, df: 80 } })

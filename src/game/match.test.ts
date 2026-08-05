@@ -39,7 +39,7 @@ function simToEnd(state: MatchState): MatchState {
 
 describe('season format, solo vs CPU with fillers', () => {
   it('runs draft -> season -> playoffs -> champion end to end', () => {
-    let state = initMatch({ mode: 'tiers', format: 'season', leagueSize: 4, seed: 314 }, SOLO, ctx)
+    let state = initMatch({ mode: 'themes', format: 'season', leagueSize: 4, seed: 314, input: 'grid' }, SOLO, ctx)
     state = draftToCompletion(state)
 
     expect(state.entries.length).toBe(4)
@@ -63,7 +63,7 @@ describe('season format, solo vs CPU with fillers', () => {
 
   it('is deterministic end to end for a fixed seed and action script', () => {
     const run = () => {
-      let state = initMatch({ mode: 'tiers', format: 'season', leagueSize: 4, seed: 42 }, SOLO, ctx)
+      let state = initMatch({ mode: 'themes', format: 'season', leagueSize: 4, seed: 42, input: 'grid' }, SOLO, ctx)
       state = draftToCompletion(state)
       state = applyMatchAction(state, { type: 'BEGIN_COMPETITION' }, ctx)
       return simToEnd(state)
@@ -77,7 +77,7 @@ describe('season format, solo vs CPU with fillers', () => {
 
 describe('straight series format', () => {
   it('skips the season and crowns a champion through a bracket', () => {
-    let state = initMatch({ mode: 'tiers', format: 'series', leagueSize: 2, seed: 9 }, SOLO, ctx)
+    let state = initMatch({ mode: 'themes', format: 'series', leagueSize: 2, seed: 9, input: 'grid' }, SOLO, ctx)
     state = draftToCompletion(state)
     state = applyMatchAction(state, { type: 'BEGIN_COMPETITION' }, ctx)
     expect(state.phase).toBe('playoffs')
@@ -97,7 +97,7 @@ describe('straight series format', () => {
       { id: 'p3', name: 'C', isCpu: false },
       { id: 'p4', name: 'D', isCpu: false },
     ]
-    let state = initMatch({ mode: 'tiers', format: 'series', leagueSize: 4, seed: 77 }, players, ctx)
+    let state = initMatch({ mode: 'themes', format: 'series', leagueSize: 4, seed: 77, input: 'grid' }, players, ctx)
     state = draftToCompletion(state)
     state = applyMatchAction(state, { type: 'BEGIN_COMPETITION' }, ctx)
     expect(state.playoffRounds[0].name).toBe('SEMIFINALS')
@@ -110,7 +110,7 @@ describe('straight series format', () => {
 
 describe('preview-phase lineup moves', () => {
   it('lets a player legally rearrange and rejects illegal moves', () => {
-    let state = initMatch({ mode: 'tiers', format: 'series', leagueSize: 2, seed: 15 }, SOLO, ctx)
+    let state = initMatch({ mode: 'themes', format: 'series', leagueSize: 2, seed: 15, input: 'grid' }, SOLO, ctx)
     state = draftToCompletion(state)
 
     const roster = state.rosters.me

@@ -1,5 +1,5 @@
 import type { Card } from '../types'
-import { ALL_SLOTS, STARTER_SLOTS, rosterCards, slotCompat, starters, type Roster } from './lineup'
+import { ALL_SLOTS, rosterCards, slotCompat, starters, type Roster } from './lineup'
 
 export interface NeedScore {
   name: string
@@ -26,20 +26,34 @@ const BENCH_WEIGHT = 0.35
 
 // ------------------------------------------------------------------ quality
 
+// Basketball is star-driven: your best players carry far more of the
+// outcome than your fifth starter, and a true superstar bends series.
+// Starters are weighted by rank, and 95+ seasons earn a premium.
+const STAR_WEIGHTS = [0.3, 0.24, 0.19, 0.15, 0.12]
+
 function computeQuality(roster: Roster): number {
   const cards = rosterCards(roster)
   if (cards.length === 0) return 0
-  let sum = 0
-  let weights = 0
-  for (const slot of ALL_SLOTS) {
-    const card = roster[slot]
-    if (!card) continue
-    const w = (STARTER_SLOTS as readonly string[]).includes(slot) ? 1 : BENCH_WEIGHT
-    sum += card.ovr * w
-    weights += w
-  }
-  const avg = sum / weights
-  return clamp(Math.round(((avg - 50) / 49) * 100), 0, 100)
+
+  const starterOvrs = starters(roster)
+    .map((c) => c.ovr)
+    .sort((a, b) => b - a)
+  let starterAvg = 0
+  let weightSum = 0
+  starterOvrs.forEach((ovr, i) => {
+    const w = STAR_WEIGHTS[i] ?? 0.1
+    starterAvg += ovr * w
+    weightSum += w
+  })
+  starterAvg = weightSum > 0 ? starterAvg / weightSum : 0
+
+  const starterSet = new Set(starters(roster).map((c) => c.id))
+  const benchOvrs = cards.filter((c) => !starterSet.has(c.id)).map((c) => c.ovr)
+  const benchAvg = benchOvrs.length > 0 ? benchOvrs.reduce((a, b) => a + b, 0) / benchOvrs.length : starterAvg - 12
+
+  const blended = starterAvg * (1 - BENCH_WEIGHT * 0.5) + benchAvg * (BENCH_WEIGHT * 0.5)
+  const premium = starterOvrs.filter((ovr) => ovr >= 95).length * 1.5
+  return clamp(Math.round(((blended - 50) / 49) * 100 + premium), 0, 100)
 }
 
 // ---------------------------------------------------------------------- fit
@@ -132,6 +146,16 @@ function computeBalance(roster: Roster): number {
     if (need.score < GAP_THRESHOLD) score -= (GAP_THRESHOLD - need.score) * 0.3
   }
   score -= usageOverload(roster)
+
+  const cards = starters(roster)
+  // Spacing: a modern offense needs at least two credible shooters on the
+  // floor or the paint collapses on your scorers.
+  const shooters = cards.filter((c) => c.attrs.sh >= 70).length
+  if (shooters < 2) score -= (2 - shooters) * 7
+  // Weak link: one unplayable defender gets hunted every possession.
+  const worstDef = Math.min(...cards.map((c) => norm(c.attrs.df)))
+  if (worstDef < 0.35) score -= (0.35 - worstDef) * 40
+
   return clamp(Math.round(score), 0, 100)
 }
 
