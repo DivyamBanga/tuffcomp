@@ -5,11 +5,20 @@ An arcade NBA drafting game for a friend group. Spin for real player-season card
 a season, and the playoffs to crown a champion - scoring not just star power but how well a
 team actually fits together.
 
-Status: v2 shipped. Solo vs CPU and online rooms both live; Theme Draft, the
-AI scout, the game ledger, and the drafting-sheet reskin landed 2026-07-31.
+Status: v3 shipped 2026-08-05. Tiered Spins deleted - Theme Draft is the one
+draft. Solo is the 82-0 chase (draft under the theme, 82 games vs a strong
+generated slate, the record is the score). Slot control on every pick,
+star-weighted evaluation with spacing and weak-link defense, stripped-down
+UI (big photos, big numbers, few words), no key-asking anywhere (hidden
+#scout page arms a browser; the Worker proxy makes it keyless for everyone
+once deployed).
 Owner: Divyam. Repo: tuffcomp (game branded RING CHASERS).
 Live: https://divyambanga.github.io/tuffcomp/
-Last updated: 2026-07-31.
+Last updated: 2026-08-05.
+
+NOTE: Sections below describe v2 mechanics where they conflict with the v3
+status line above (tiers, per-round themes, solo leagues); the code and
+tests are the source of truth for v3 details.
 
 This replaces the earlier soccer drafting game that lived in this repo (fully recoverable in
 git history before commit "Start from scratch").
