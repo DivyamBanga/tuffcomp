@@ -27,6 +27,7 @@ const FILES = {
   'player-award-shares.csv': `${BBREF_BASE}/Player%20Award%20Shares.csv`,
   'all-star-selections.csv': `${BBREF_BASE}/All-Star%20Selections.csv`,
   'team-abbrev.csv': `${BBREF_BASE}/Team%20Abbrev.csv`,
+  'draft-pick-history.csv': `${BBREF_BASE}/Draft%20Pick%20History.csv`,
   'nba-player-index.py': 'https://raw.githubusercontent.com/swar/nba_api/master/src/nba_api/stats/library/data.py',
 }
 
