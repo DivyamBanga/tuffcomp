@@ -14,7 +14,6 @@ import {
   type DraftMode,
   type DraftPlayer,
   type DraftState,
-  type PickInput,
 } from './draft'
 import {
   applyResult,
@@ -41,8 +40,8 @@ export interface MatchConfig {
   format: MatchFormat
   leagueSize: number
   seed: number
-  // Theme mode pick style; absent means 'type' (blind typing).
-  input?: PickInput
+  // A chosen theme id, or null/absent for RANDOM (seeded).
+  theme?: string | null
 }
 
 export type MatchPhase = 'draft' | 'preview' | 'season' | 'playoffs' | 'done'
@@ -72,6 +71,9 @@ export interface MatchState {
   entries: TeamEntry[]
   phase: MatchPhase
   draft: DraftState | null
+  // Mirrors the draft's positionless flag for the phases after it: slot
+  // legality and fit scoring go by skills instead of positions.
+  positionless: boolean
   rosters: Record<string, Roster>
   // Optional AI scouting report; nudges the sim within hard caps.
   judge: LeagueJudgment | null
@@ -104,12 +106,13 @@ const FILLER_NAMES = [
 // ------------------------------------------------------------------ init
 
 export function initMatch(config: MatchConfig, players: DraftPlayer[], ctx: DraftCtx): MatchState {
-  const draft = advanceCpuTurns(initDraft(config.mode, players, config.seed, ctx, config.input ?? 'type'), ctx)
+  const draft = advanceCpuTurns(initDraft(config.mode, players, config.seed, ctx, config.theme), ctx)
   return {
     config,
     entries: players.map((p) => ({ id: p.id, name: p.name, isCpu: p.isCpu, isFiller: false })),
     phase: 'draft',
     draft,
+    positionless: draft.positionless,
     rosters: {},
     judge: null,
     season: null,
@@ -128,7 +131,7 @@ export function buildProfiles(state: MatchState): Map<string, TeamSimProfile> {
   const adjustments = state.judge ? judgeAdjustments(state.judge, ids) : null
   return new Map(
     ids.map((id) => {
-      const profile = simProfile(id, state.rosters[id])
+      const profile = simProfile(id, state.rosters[id], state.positionless)
       const adj = adjustments?.get(id)
       if (adj) {
         profile.offense += adj.dOff
@@ -183,7 +186,7 @@ function chaseSchedule(myId: string, opponentIds: string[]): { homeId: string; a
 // evaluated team power right away.
 function powerSeeds(state: MatchState): string[] {
   return [...state.entries]
-    .map((e) => ({ id: e.id, power: evaluateTeam(state.rosters[e.id]).power }))
+    .map((e) => ({ id: e.id, power: evaluateTeam(state.rosters[e.id], state.positionless).power }))
     .sort((a, b) => b.power - a.power || a.id.localeCompare(b.id))
     .map((x) => x.id)
 }
@@ -303,8 +306,9 @@ export function applyMatchAction(state: MatchState, action: MatchAction, ctx: Dr
     if (!roster) return state
     const fromCard = roster[action.from]
     const toCard = roster[action.to]
-    if (!fromCard || !canPlaySlot(fromCard, action.to)) return state
-    if (toCard && !canPlaySlot(toCard, action.from)) return state
+    if (!fromCard) return state
+    if (!state.positionless && !canPlaySlot(fromCard, action.to)) return state
+    if (toCard && !state.positionless && !canPlaySlot(toCard, action.from)) return state
     const moved: Roster = { ...roster, [action.from]: toCard, [action.to]: fromCard }
     return { ...state, rosters: { ...state.rosters, [action.playerId]: moved } }
   }

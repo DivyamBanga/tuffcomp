@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { loadCards } from '../data/loadCards'
-import { cpuChoose, type DraftCtx } from '../game/draft'
+import { cpuChooseTheme, type DraftCtx } from '../game/draft'
 import type { MatchConfig, MatchState } from '../game/match'
 import { makeRoomCode, normalizeRoomCode, peerIdForCode, type LobbySnapshot } from './protocol'
 import { GuestRoom, HostRoom, type PeerFactory, type WireConnection, type WirePeer } from './room'
@@ -73,7 +73,7 @@ function makeFakeNetwork(): PeerFactory {
 // ------------------------------------------------------------------ setup
 
 let ctx: DraftCtx
-const CONFIG: MatchConfig = { mode: 'themes', format: 'series', leagueSize: 2, seed: 5, input: 'grid' }
+const CONFIG: MatchConfig = { mode: 'themes', format: 'series', leagueSize: 2, seed: 5, theme: 'era-90s' }
 
 beforeAll(async () => {
   ctx = { pool: await loadCards() }
@@ -167,17 +167,16 @@ describe('host + guests over the fake wire', () => {
     expect(match().draft!.order[0]).toBe('host-1')
 
     // Guest tries to act out of turn - rejected by the host authority.
-    const offerBefore = match().draft!.offer!.cards.map((c) => c.id)
     g1.guest.sendAction({
       type: 'DRAFT',
-      action: { type: 'TAKE', playerId: 'guest-1', cardId: offerBefore[0] },
+      action: { type: 'TYPE_PICK', playerId: 'guest-1', query: 'Michael Jordan' },
     })
     expect(match().draft!.pickIndex).toBe(0)
 
     // Guest also can't spoof the host's playerId (sender mismatch).
     g1.guest.sendAction({
       type: 'DRAFT',
-      action: { type: 'TAKE', playerId: 'host-1', cardId: offerBefore[0] },
+      action: { type: 'TYPE_PICK', playerId: 'host-1', query: 'Michael Jordan' },
     })
     expect(match().draft!.pickIndex).toBe(0)
 
@@ -186,7 +185,7 @@ describe('host + guests over the fake wire', () => {
     while (match().phase === 'draft' && guard++ < 60) {
       const draft = match().draft!
       const turn = draft.order[draft.pickIndex]
-      const action = cpuChoose(draft)
+      const action = cpuChooseTheme(draft, ctx)
       if (turn === 'host-1') room.host.dispatchFrom('host-1', { type: 'DRAFT', action })
       else g1.guest.sendAction({ type: 'DRAFT', action })
     }

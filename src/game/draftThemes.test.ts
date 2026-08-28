@@ -1,14 +1,15 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { loadCards } from '../data/loadCards'
-import { canFieldStarters, rosterCards, STARTER_SLOTS } from '../engine/lineup'
+import { canFieldStarters, emptyRoster, rosterCards, STARTER_SLOTS } from '../engine/lineup'
 import type { Card } from '../types'
 import {
   advanceCpuTurns,
   applyAction,
+  autoPlace,
+  cpuChooseTheme,
   currentPlayerId,
   initDraft,
   ROUNDS,
-  STRIKES_PER_PLAYER,
   type DraftCtx,
   type DraftPlayer,
   type DraftState,
@@ -57,29 +58,31 @@ function offThemeName(state: DraftState): string {
 }
 
 describe('theme draft init', () => {
-  it('deals ONE theme for the whole draft and starts in type mode with no board', () => {
-    const state = initDraft('themes', HUMANS, 42, ctx, 'type')
+  it('deals ONE theme for the whole draft, no board, typing only', () => {
+    const state = initDraft('themes', HUMANS, 42, ctx)
     expect(state.theme).not.toBeNull()
     expect(themeById(state.theme!).label.length).toBeGreaterThan(0)
-    expect(initDraft('themes', HUMANS, 42, ctx, 'type').theme).toBe(state.theme)
+    expect(initDraft('themes', HUMANS, 42, ctx).theme).toBe(state.theme)
     expect(state.offer).toBeNull()
-    expect(state.teams.p1.strikesLeft).toBe(STRIKES_PER_PLAYER)
+    expect(state.whiffs).toEqual([])
   })
 
-  it('grid mode opens with a themed board of distinct people', () => {
-    const state = initDraft('themes', HUMANS, 42, ctx, 'grid')
-    const theme = themeById(state.theme!)
-    expect(state.offer).not.toBeNull()
-    const cards = state.offer!.cards
-    expect(cards.length).toBeGreaterThan(0)
-    expect(new Set(cards.map((c) => c.pid)).size).toBe(cards.length)
-    for (const card of cards) expect(theme.test(card)).toBe(true)
+  it('honors a chosen theme', () => {
+    const state = initDraft('themes', HUMANS, 42, ctx, 'era-80s')
+    expect(state.theme).toBe('era-80s')
+    expect(state.positionless).toBe(false)
+  })
+
+  it('a position-locked theme deals as positionless', () => {
+    const state = initDraft('themes', HUMANS, 42, ctx, 'bio-sevenfeet')
+    expect(state.theme).toBe('bio-sevenfeet')
+    expect(state.positionless).toBe(true)
   })
 })
 
-describe('typed picks', () => {
+describe('typed picks (unlimited, no strikes)', () => {
   it('a valid call drafts that person’s best in-theme season and advances', () => {
-    const state = initDraft('themes', HUMANS, 42, ctx, 'type')
+    const state = initDraft('themes', HUMANS, 42, ctx)
     const theme = themeById(state.theme!)
     const target = validTypedPick(state)
     const next = applyAction(state, { type: 'TYPE_PICK', playerId: 'p1', query: target.name }, ctx)
@@ -96,56 +99,53 @@ describe('typed picks', () => {
     expect(next.lastType).toBeNull()
   })
 
-  it('an off-theme call burns a strike with feedback and no pick', () => {
-    const state = initDraft('themes', HUMANS, 42, ctx, 'type')
+  it('wrong calls cost nothing and pile into the whiff ledger, forever', () => {
+    let state = initDraft('themes', HUMANS, 42, ctx)
     const name = offThemeName(state)
-    const next = applyAction(state, { type: 'TYPE_PICK', playerId: 'p1', query: name }, ctx)
 
-    expect(next.pickIndex).toBe(0)
-    expect(next.teams.p1.strikesLeft).toBe(STRIKES_PER_PLAYER - 1)
-    expect(next.lastType?.outcome).toBe('off-theme')
-    expect(next.lastType?.matchedName).toBe(name)
+    // Ten straight whiffs: no strikes, no board, still your turn.
+    for (let i = 0; i < 10; i++) {
+      state = applyAction(state, { type: 'TYPE_PICK', playerId: 'p1', query: name }, ctx)
+      expect(state.offer).toBeNull()
+      expect(currentPlayerId(state)).toBe('p1')
+    }
+    expect(state.pickIndex).toBe(0)
+    expect(state.lastType?.outcome).toBe('off-theme')
+    expect(state.lastType?.matchedName).toBe(name)
+    expect(state.lastType?.attempt).toBe(10)
+    expect(state.whiffs.length).toBe(10)
+
+    // And a valid call still lands afterward.
+    const target = validTypedPick(state)
+    const next = applyAction(state, { type: 'TYPE_PICK', playerId: 'p1', query: target.name }, ctx)
+    expect(next.pickIndex).toBe(1)
+    // The ledger survives the pick - the shame is permanent.
+    expect(next.whiffs.length).toBe(10)
   })
 
-  it('an already-drafted person is a strike', () => {
-    let state = initDraft('themes', HUMANS, 42, ctx, 'type')
+  it('an already-drafted person and gibberish give distinct feedback', () => {
+    let state = initDraft('themes', HUMANS, 42, ctx)
     const target = validTypedPick(state)
     state = applyAction(state, { type: 'TYPE_PICK', playerId: 'p1', query: target.name }, ctx)
-    const next = applyAction(state, { type: 'TYPE_PICK', playerId: 'p2', query: target.name }, ctx)
-    expect(next.teams.p2.strikesLeft).toBe(STRIKES_PER_PLAYER - 1)
-    expect(next.lastType?.outcome).toBe('taken')
+    const taken = applyAction(state, { type: 'TYPE_PICK', playerId: 'p2', query: target.name }, ctx)
+    expect(taken.lastType?.outcome).toBe('taken')
+    const gibberish = applyAction(state, { type: 'TYPE_PICK', playerId: 'p2', query: 'xqzvw plork' }, ctx)
+    expect(gibberish.lastType?.outcome).toBe('no-match')
   })
 
-  it('gibberish costs nothing', () => {
-    const state = initDraft('themes', HUMANS, 42, ctx, 'type')
-    const next = applyAction(state, { type: 'TYPE_PICK', playerId: 'p1', query: 'xqzvw plork' }, ctx)
-    expect(next.teams.p1.strikesLeft).toBe(STRIKES_PER_PLAYER)
-    expect(next.lastType?.outcome).toBe('no-match')
-  })
-
-  it('three strikes opens the board, and the board still honors the theme', () => {
-    let state = initDraft('themes', HUMANS, 42, ctx, 'type')
-    const theme = themeById(state.theme!)
+  it('the whiff ledger is capped', () => {
+    let state = initDraft('themes', HUMANS, 42, ctx)
     const name = offThemeName(state)
-    for (let i = 0; i < STRIKES_PER_PLAYER; i++) {
-      expect(state.offer).toBeNull()
+    for (let i = 0; i < 30; i++) {
       state = applyAction(state, { type: 'TYPE_PICK', playerId: 'p1', query: name }, ctx)
     }
-    expect(state.teams.p1.strikesLeft).toBe(0)
-    expect(state.offer).not.toBeNull()
-    for (const card of state.offer!.cards) expect(theme.test(card)).toBe(true)
-
-    const take = state.offer!.cards[0]
-    const next = applyAction(state, { type: 'TAKE', playerId: 'p1', cardId: take.id }, ctx)
-    expect(next.pickIndex).toBe(1)
-    expect(rosterCards(next.teams.p1.roster)[0].id).toBe(take.id)
+    expect(state.whiffs.length).toBeLessThanOrEqual(24)
   })
-
 })
 
 describe('full theme drafts', () => {
-  it('an all-CPU type-mode draft completes with legal themed teams', () => {
-    const state = advanceCpuTurns(initDraft('themes', CPUS, 7, ctx, 'type'), ctx)
+  it('an all-CPU typed draft completes with legal themed teams', () => {
+    const state = advanceCpuTurns(initDraft('themes', CPUS, 7, ctx), ctx)
     expect(state.done).toBe(true)
     for (const p of CPUS) {
       const cards = rosterCards(state.teams[p.id].roster)
@@ -157,26 +157,41 @@ describe('full theme drafts', () => {
     expect(new Set(allPids).size).toBe(allPids.length)
   })
 
-  it('an all-CPU grid-mode draft completes too', () => {
-    const state = advanceCpuTurns(initDraft('themes', CPUS, 99, ctx, 'grid'), ctx)
-    expect(state.done).toBe(true)
-    for (const p of CPUS) {
-      expect(canFieldStarters(rosterCards(state.teams[p.id].roster))).toBe(true)
-    }
-  })
-
-  it('every non-fallback pick in a stepped draft honors the one theme', () => {
-    let state = initDraft('themes', CPUS, 123, ctx, 'grid')
+  it('every pick in a stepped draft honors the one theme', () => {
+    let state = initDraft('themes', CPUS, 123, ctx)
     const theme = themeById(state.theme!)
     while (!state.done) {
       const playerId = currentPlayerId(state)!
-      const offer = state.offer!
-      const fallback = offer.themeFallback === true
+      const fallback = state.offer?.themeFallback === true
       const before = state.teams[playerId].roster
-      state = applyAction(state, { type: 'TAKE', playerId, cardId: offer.cards[0].id }, ctx)
+      state = applyAction(state, cpuChooseTheme(state, ctx), ctx)
       const after = state.teams[playerId].roster
       const gained = rosterCards(after).find((c) => !rosterCards(before).some((b) => b.id === c.id))!
       if (!fallback) expect(theme.test(gained), `pick ${state.pickIndex} ${gained.name}`).toBe(true)
     }
+  })
+
+  it('a positionless draft fills all five slots in-theme with giants', () => {
+    const state = advanceCpuTurns(initDraft('themes', CPUS, 5, ctx, 'bio-sevenfeet'), ctx)
+    expect(state.done).toBe(true)
+    const theme = themeById('bio-sevenfeet')
+    for (const p of CPUS) {
+      const roster = state.teams[p.id].roster
+      for (const slot of STARTER_SLOTS) {
+        expect(roster[slot], `${p.id} ${slot}`).not.toBeNull()
+        // Every single pick fits the category - even the "point guard".
+        expect(theme.test(roster[slot]!), `${p.id} ${slot} ${roster[slot]!.name}`).toBe(true)
+      }
+      expect(rosterCards(roster).length).toBe(ROUNDS)
+    }
+  })
+
+  it('positionless placement matches skills to roles', () => {
+    const empty = emptyRoster()
+    // A playmaking giant runs the point; a rim god anchors the middle.
+    const passer = pool.find((c) => c.name === 'Nikola Jokić' && c.season === 2024)!
+    const rim = pool.find((c) => c.name === 'Victor Wembanyama' && c.season === 2026)!
+    expect(autoPlace(empty, passer, false, true)).toBe('PG')
+    expect(autoPlace(empty, rim, false, true)).toBe('C')
   })
 })

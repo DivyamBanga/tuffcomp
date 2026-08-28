@@ -12,7 +12,7 @@ export function PreviewScreen({ match }: { match: MatchState }) {
 
   const canControl = sessionMode !== 'guest' // host or solo can begin
   const roster = match.rosters[viewId]
-  const evaluation = evaluateTeam(roster)
+  const evaluation = evaluateTeam(roster, match.positionless)
   const viewingMine = viewId === myId
   const scout = match.judge?.teams[viewId] ?? null
 

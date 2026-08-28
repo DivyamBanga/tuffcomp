@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { cpuChoose } from './draft'
+import { cpuChooseTheme } from './draft'
 import { CHASE_GAMES } from './match'
 import { useGame } from './store'
 
@@ -13,7 +13,7 @@ describe('store: full chase run', () => {
   it('plays draft -> preview -> 82 games -> record', async () => {
     const store = () => useGame.getState()
 
-    await store().startSolo('grid')
+    await store().startSolo(null)
     expect(store().screen).toBe('game')
     expect(store().match!.phase).toBe('draft')
     expect(store().match!.draft!.theme).not.toBeNull()
@@ -23,7 +23,7 @@ describe('store: full chase run', () => {
     while (store().match!.phase === 'draft' && guard++ < 20) {
       const draft = store().match!.draft!
       expect(draft.order[draft.pickIndex]).toBe(store().myId)
-      store().dispatch({ type: 'DRAFT', action: cpuChoose(draft) })
+      store().dispatch({ type: 'DRAFT', action: cpuChooseTheme(draft, { pool: store().pool! }) })
     }
     expect(store().match!.phase).toBe('preview')
     // The chase generates a full slate of opposition.

@@ -5,7 +5,7 @@ import type { Card } from '../types'
 import {
   advanceCpuTurns,
   applyAction,
-  cpuChoose,
+  cpuChooseTheme,
   currentPlayerId,
   draftFillerTeam,
   initDraft,
@@ -29,47 +29,38 @@ beforeAll(async () => {
   ctx = { pool }
 })
 
-// Plays every turn off the board - a fast way to drive a full legal draft.
+// Plays every turn like a knowledgeable CPU - a fast way to drive a full
+// legal draft through the typed flow.
 function playOut(state: DraftState): DraftState {
   let current = state
   while (!current.done) {
-    current = applyAction(current, cpuChoose(current), ctx)
+    current = applyAction(current, cpuChooseTheme(current, ctx), ctx)
   }
   return current
 }
 
-describe('turn and board rules (grid input)', () => {
-  it('builds a snake order and opens with a themed board', () => {
-    const state = initDraft('themes', HUMANS, 42, ctx, 'grid')
+// A positional-theme draft, pinned so slot-legality assertions hold.
+function positionalDraft(seed: number): DraftState {
+  return initDraft('themes', HUMANS, seed, ctx, 'era-90s')
+}
+
+describe('turn rules (typed picks only)', () => {
+  it('builds a snake order and opens with no board - typing is the game', () => {
+    const state = positionalDraft(42)
     expect(state.order.length).toBe(ROUNDS * 3)
     expect(state.order.slice(0, 6)).toEqual(['p1', 'p2', 'p3', 'p3', 'p2', 'p1'])
-    expect(state.offer).not.toBeNull()
-    expect(state.offer!.cards.length).toBeGreaterThan(0)
+    expect(state.offer).toBeNull()
+    expect(state.positionless).toBe(false)
   })
 
-  it('rejects actions from a player out of turn and cards off the board', () => {
-    const state = initDraft('themes', HUMANS, 42, ctx, 'grid')
-    const stolen = applyAction(state, { type: 'TAKE', playerId: 'p2', cardId: state.offer!.cards[0].id }, ctx)
+  it('rejects typed picks from a player out of turn', () => {
+    const state = positionalDraft(42)
+    const stolen = applyAction(state, { type: 'TYPE_PICK', playerId: 'p2', query: 'Michael Jordan' }, ctx)
     expect(stolen).toBe(state)
-    const offIds = new Set(state.offer!.cards.map((c) => c.id))
-    const outsider = pool.find((c) => !offIds.has(c.id))!
-    const cheated = applyAction(state, { type: 'TAKE', playerId: 'p1', cardId: outsider.id }, ctx)
-    expect(cheated).toBe(state)
-  })
-
-  it('never offers an already-drafted person, in any season', () => {
-    let state = initDraft('themes', HUMANS, 11, ctx, 'grid')
-    for (let i = 0; i < 12 && !state.done; i++) {
-      const drafted = new Set(state.draftedPids)
-      for (const card of state.offer!.cards) {
-        expect(drafted.has(card.pid)).toBe(false)
-      }
-      state = applyAction(state, cpuChoose(state), ctx)
-    }
   })
 
   it('completes with legal teams and one person per league', () => {
-    const state = playOut(initDraft('themes', HUMANS, 99, ctx, 'grid'))
+    const state = playOut(positionalDraft(99))
     expect(state.done).toBe(true)
     for (const playerId of ['p1', 'p2', 'p3']) {
       const cards = rosterCards(state.teams[playerId].roster)
@@ -83,33 +74,41 @@ describe('turn and board rules (grid input)', () => {
 })
 
 describe('slot control', () => {
+  // A '90s card the current drafter can legally call by name.
+  function callable(state: DraftState): Card {
+    const drafted = new Set(state.draftedPids)
+    return pool.find(
+      (c) => !drafted.has(c.pid) && c.season >= 1990 && c.season <= 1999 && c.ovr >= 90,
+    )!
+  }
+
   it('a chosen legal open slot wins; an illegal one falls back to auto', () => {
-    const state = initDraft('themes', HUMANS, 42, ctx, 'grid')
-    const card = state.offer!.cards[0]
+    const state = positionalDraft(42)
+    const card = callable(state)
     const legal = STARTER_SLOTS.find((slot) => canPlaySlot(card, slot))
     if (legal) {
-      const placed = applyAction(state, { type: 'TAKE', playerId: 'p1', cardId: card.id, slot: legal }, ctx)
-      expect(placed.teams.p1.roster[legal]!.id).toBe(card.id)
+      const placed = applyAction(state, { type: 'TYPE_PICK', playerId: 'p1', query: card.name, slot: legal }, ctx)
+      expect(placed.teams.p1.roster[legal]!.pid).toBe(card.pid)
     }
     const illegal = STARTER_SLOTS.find((slot) => !canPlaySlot(card, slot))
     if (illegal) {
-      const auto = applyAction(state, { type: 'TAKE', playerId: 'p1', cardId: card.id, slot: illegal }, ctx)
-      expect(rosterCards(auto.teams.p1.roster).map((c) => c.id)).toContain(card.id)
-      expect(auto.teams.p1.roster[illegal]?.id).not.toBe(card.id)
+      const auto = applyAction(state, { type: 'TYPE_PICK', playerId: 'p1', query: card.name, slot: illegal }, ctx)
+      expect(rosterCards(auto.teams.p1.roster).map((c) => c.pid)).toContain(card.pid)
+      expect(auto.teams.p1.roster[illegal]?.pid).not.toBe(card.pid)
     }
   })
 
   it('the bench is a valid chosen slot', () => {
-    const state = initDraft('themes', HUMANS, 42, ctx, 'grid')
-    const card = state.offer!.cards[0]
-    const placed = applyAction(state, { type: 'TAKE', playerId: 'p1', cardId: card.id, slot: 'B2' }, ctx)
-    expect(placed.teams.p1.roster.B2!.id).toBe(card.id)
+    const state = positionalDraft(42)
+    const card = callable(state)
+    const placed = applyAction(state, { type: 'TYPE_PICK', playerId: 'p1', query: card.name, slot: 'B2' }, ctx)
+    expect(placed.teams.p1.roster.B2!.pid).toBe(card.pid)
   })
 })
 
 describe('MOVE', () => {
   it('swaps two legally-compatible slots and rejects illegal moves', () => {
-    const state = playOut(initDraft('themes', HUMANS, 33, ctx, 'grid'))
+    const state = playOut(positionalDraft(33))
     const team = state.teams.p1
     const pg = team.roster.PG!
     const b1 = team.roster.B1!
@@ -131,9 +130,9 @@ describe('CPU turns', () => {
       { id: 'cpu1', name: 'BOT A', isCpu: true },
       { id: 'cpu2', name: 'BOT B', isCpu: true },
     ]
-    let state = initDraft('themes', players, 13, ctx, 'grid')
+    let state = initDraft('themes', players, 13, ctx, 'era-90s')
     expect(currentPlayerId(state)).toBe('me')
-    state = applyAction(state, { type: 'TAKE', playerId: 'me', cardId: state.offer!.cards[0].id }, ctx)
+    state = applyAction(state, cpuChooseTheme(state, ctx), ctx)
     state = advanceCpuTurns(state, ctx)
     // snake: me, cpu1, cpu2, cpu2, cpu1, me -> back to the human
     expect(currentPlayerId(state)).toBe('me')
@@ -144,7 +143,7 @@ describe('CPU turns', () => {
 
 describe('draftFillerTeam', () => {
   it('builds legal opposition that avoids all drafted persons, stronger at higher bias', () => {
-    const state = playOut(initDraft('themes', HUMANS, 55, ctx, 'grid'))
+    const state = playOut(positionalDraft(55))
     const drafted = new Set(state.draftedPids)
     const filler = draftFillerTeam(drafted, ctx, 777, 0.6)
     const cards = rosterCards(filler.roster)

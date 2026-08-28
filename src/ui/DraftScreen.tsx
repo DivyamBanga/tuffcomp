@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { loadCards } from '../data/loadCards'
-import { currentRound, ROUNDS, STRIKES_PER_PLAYER, type DraftState, type TypeFeedback } from '../game/draft'
+import { currentRound, ROUNDS, type DraftState, type TypeFeedback } from '../game/draft'
 import { THEMES, suggestNames, themeById } from '../game/themes'
 import { useGame } from '../game/store'
 import type { MatchState } from '../game/match'
@@ -10,28 +10,18 @@ import { Btn, MiniCard, PlayerCard, Sheet, StatusLine } from './components'
 
 const REVEAL_MS = 1400
 
-function whiffLine(feedback: TypeFeedback): string {
+function whiffText(feedback: TypeFeedback): string {
   const name = feedback.matchedName?.toUpperCase()
   switch (feedback.outcome) {
     case 'no-match':
-      return `NO PLAYER FOUND · NO STRIKE`
+      return 'WHO?'
     case 'off-theme':
-      return `${name} DOESN'T FIT · STRIKE`
+      return `${name} DOESN'T FIT`
     case 'taken':
-      return `${name} IS GONE · STRIKE`
+      return `${name} IS GONE`
     case 'cant-fit':
-      return `${name} CAN'T FILL YOUR FIVE · STRIKE`
+      return `${name} CAN'T FILL YOUR FIVE`
   }
-}
-
-function StrikeDots({ left }: { left: number }) {
-  return (
-    <span className="flex items-center gap-1.5">
-      {Array.from({ length: STRIKES_PER_PLAYER }, (_, i) => (
-        <span key={i} className={`h-1.5 w-1.5 rounded-full ${i < left ? 'bg-ink' : 'border border-line'}`} />
-      ))}
-    </span>
-  )
 }
 
 // The draft's one theme deals itself once at the start.
@@ -97,12 +87,11 @@ function SlotPicker({
 // ------------------------------------------------------------- type-in form
 
 function TypePickForm({ draft, myId, slot }: { draft: DraftState; myId: string; slot: SlotId | null }) {
-  const { dispatch } = useGame()
+  const { dispatch, sendTyping } = useGame()
   const [query, setQuery] = useState('')
   const [highlight, setHighlight] = useState(-1)
   const [pool, setPool] = useState<Card[] | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const strikes = draft.teams[myId].strikesLeft
   const feedback = draft.lastType?.playerId === myId ? draft.lastType : null
 
   // Autocomplete index - spelling help over ALL players, never filtered
@@ -154,8 +143,10 @@ function TypePickForm({ draft, myId, slot }: { draft: DraftState; myId: string; 
               ref={inputRef}
               value={query}
               onChange={(e) => {
-                setQuery(e.target.value.slice(0, 32))
+                const text = e.target.value.slice(0, 32)
+                setQuery(text)
                 setHighlight(-1)
+                sendTyping(text)
               }}
               onKeyDown={onKeyDown}
               placeholder="type a name"
@@ -188,17 +179,40 @@ function TypePickForm({ draft, myId, slot }: { draft: DraftState; myId: string; 
         </div>
       </div>
       <div className="flex w-full items-center justify-between">
-        <StrikeDots left={strikes} />
-        {feedback && <p className="plate !text-[10px] !tracking-[0.1em] text-ink">{whiffLine(feedback)}</p>}
+        <span className="plate plate-faint !text-[8.5px]">UNLIMITED CALLS · NAME ONE WHO FITS</span>
+        {feedback && <p className="plate !text-[10px] !tracking-[0.1em] text-ink">{whiffText(feedback)}</p>}
       </div>
     </div>
+  )
+}
+
+// -------------------------------------------------------------- whiff feed
+
+// The draft's public record of wrong calls, newest first. Solo included -
+// your shame has a memory.
+function WhiffFeed({ draft }: { draft: DraftState }) {
+  if (draft.whiffs.length === 0) return null
+  const nameOf = (id: string) => draft.players.find((p) => p.id === id)?.name ?? '???'
+  const recent = [...draft.whiffs].reverse().slice(0, 6)
+  return (
+    <Sheet title={`WHIFF LEDGER · ${draft.whiffs.length}`} pad={false}>
+      <div>
+        {recent.map((w, i) => (
+          <p key={`${w.playerId}-${w.attempt}-${i}`} className="num cell flex items-baseline gap-2 !py-1.5 text-[10.5px] text-dim">
+            <span className="plate plate-faint shrink-0 !text-[8.5px]">{nameOf(w.playerId).toUpperCase()}</span>
+            <span className="min-w-0 flex-1 truncate">“{w.query.toUpperCase()}”</span>
+            <span className="shrink-0 text-ink">{whiffText(w)}</span>
+          </p>
+        ))}
+      </div>
+    </Sheet>
   )
 }
 
 // ------------------------------------------------------------------ screen
 
 export function DraftScreen({ match }: { match: MatchState }) {
-  const { myId, dispatch } = useGame()
+  const { myId, dispatch, liveTyping } = useGame()
   const draft = match.draft!
   const turnId = draft.order[draft.pickIndex]
   const turnPlayer = draft.players.find((p) => p.id === turnId)
@@ -214,7 +228,7 @@ export function DraftScreen({ match }: { match: MatchState }) {
   useEffect(() => setChosenSlot(null), [draft.pickIndex])
 
   const lastPickPlayer = draft.players.find((p) => p.id === draft.lastPick?.playerId)
-  const lastTypePlayer = draft.players.find((p) => p.id === draft.lastType?.playerId)
+  const ghost = !myTurn && liveTyping && liveTyping.playerId === turnId ? liveTyping.text : null
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-4 px-3 py-5">
@@ -232,6 +246,9 @@ export function DraftScreen({ match }: { match: MatchState }) {
             <>
               <p className="headline text-3xl text-ink sm:text-4xl">{theme.label}</p>
               <p className="mt-1.5 text-[13px] text-dim">{theme.detail}</p>
+              {draft.positionless && (
+                <p className="plate plate-faint mt-1.5 !text-[8.5px]">POSITIONLESS · ANYONE PLAYS ANYWHERE</p>
+              )}
             </>
           )}
         </div>
@@ -250,7 +267,7 @@ export function DraftScreen({ match }: { match: MatchState }) {
               <TypePickForm draft={draft} myId={myId} slot={chosenSlot} />
             ) : offer ? (
               <>
-                {offer.themeFallback && <p className="plate mb-3 text-center !text-[9px]">OPEN BOARD</p>}
+                {offer.themeFallback && <p className="plate mb-3 text-center !text-[9px]">THEME RAN DRY · OPEN BOARD</p>}
                 <div className="flex flex-wrap justify-center gap-3">
                   {offer.cards.map((card, i) => (
                     <PlayerCard
@@ -275,11 +292,11 @@ export function DraftScreen({ match }: { match: MatchState }) {
             {!myTurn && (
               <div className="mt-2 grid gap-1 text-center">
                 <span className="plate animate-pulse !text-[9px]">{turnPlayer?.name?.toUpperCase() ?? '...'} IS UP</span>
-                {draft.lastType && lastTypePlayer && (
-                  <span className="plate plate-faint !text-[9px]">
-                    {lastTypePlayer.name.toUpperCase()} · “{draft.lastType.query.toUpperCase()}” ·{' '}
-                    {draft.lastType.outcome === 'no-match' ? 'WHO?' : draft.lastType.outcome.replace('-', ' ').toUpperCase()}
-                  </span>
+                {ghost !== null && (
+                  <p className="headline text-2xl text-faint">
+                    {ghost.toUpperCase() || '…'}
+                    <span className="animate-pulse text-hot">▏</span>
+                  </p>
                 )}
                 {draft.lastPick && lastPickPlayer && (
                   <span className="plate plate-faint !text-[9px]">
@@ -293,6 +310,8 @@ export function DraftScreen({ match }: { match: MatchState }) {
         )}
       </Sheet>
 
+      <WhiffFeed draft={draft} />
+
       <div className={`grid gap-3 ${solo ? '' : 'md:grid-cols-2'}`}>
         {draft.players.map((p) => {
           const team = draft.teams[p.id]
@@ -300,7 +319,6 @@ export function DraftScreen({ match }: { match: MatchState }) {
             <Sheet
               key={p.id}
               title={p.id === myId ? 'YOUR SQUAD' : p.name}
-              right={p.isCpu ? undefined : <StrikeDots left={team.strikesLeft} />}
               className={p.id === turnId && !solo ? '!border-hot' : ''}
             >
               <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">

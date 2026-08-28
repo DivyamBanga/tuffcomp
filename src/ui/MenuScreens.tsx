@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { eligibleThemes, KIND_LABELS, KIND_ORDER, themeById } from '../game/themes'
+import { ROUNDS } from '../game/draft'
 import { useGame } from '../game/store'
 import { normalizeRoomCode } from '../net/protocol'
 import { Btn, RingSeal, Sheet, StatusLine } from './components'
@@ -6,7 +8,7 @@ import { Btn, RingSeal, Sheet, StatusLine } from './components'
 // -------------------------------------------------------------------- home
 
 export function HomeScreen() {
-  const { myName, setName, startSolo, goSetup, goJoin, goTrophies, trophies } = useGame()
+  const { myName, setName, goThemePick, goSetup, goJoin, goTrophies, trophies } = useGame()
   const rings = trophies.filter((t) => t.championWasMe).length
 
   return (
@@ -38,21 +40,15 @@ export function HomeScreen() {
         </div>
         <button
           type="button"
-          onClick={() => void startSolo('type')}
+          onClick={goThemePick}
           className="cell group flex w-full items-center gap-4 text-left transition-colors hover:bg-paper2"
         >
           <span className="min-w-0 flex-1">
             <span className="headline block text-2xl text-ink">CHASE 82-0</span>
-            <span className="mt-0.5 block text-[12px] text-dim">One theme. Draft 8. Survive 82 games.</span>
+            <span className="mt-0.5 block text-[12px] text-dim">Pick a theme. Draft 8 by name. Survive 82 games.</span>
           </span>
           <span className="num text-lg text-faint transition-colors group-hover:text-hot">→</span>
         </button>
-        <div className="cell flex items-center justify-between !py-2.5">
-          <span className="plate plate-faint !text-[9px]">CHASE, EASY BOARD</span>
-          <Btn onClick={() => void startSolo('grid')} className="!px-3 !py-1.5">
-            PLAY
-          </Btn>
-        </div>
         <button
           type="button"
           onClick={() => goSetup('host')}
@@ -82,6 +78,84 @@ export function HomeScreen() {
           RINGS →
         </button>
         <p className="plate plate-faint !text-[8.5px]">REAL PLAYERS · PHOTOS © NBA</p>
+      </div>
+    </div>
+  )
+}
+
+// ------------------------------------------------------------ theme picker
+
+// Every theme deep enough for this league, grouped the way the registry
+// thinks: teams, eras, stat lines, measurables, career paths, hardware,
+// the lists. Tap one to lock it in.
+export function ThemeMenu({
+  playerCount,
+  selected,
+  onPick,
+}: {
+  playerCount: number
+  selected: string | null
+  onPick: (id: string) => void
+}) {
+  const pool = useGame((s) => s.pool)
+  const themes = useMemo(() => (pool ? eligibleThemes(pool, playerCount, ROUNDS) : []), [pool, playerCount])
+
+  if (!pool) return <p className="plate animate-pulse py-8 text-center !text-[10px]">DEALING THE POOL…</p>
+
+  return (
+    <div className="grid gap-4">
+      {KIND_ORDER.map((kind) => {
+        const group = themes.filter((t) => t.kind === kind)
+        if (group.length === 0) return null
+        return (
+          <div key={kind}>
+            <p className="plate plate-faint mb-1.5 !text-[9px]">{KIND_LABELS[kind]}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {group.map((theme) => (
+                <Btn
+                  key={theme.id}
+                  on={selected === theme.id}
+                  onClick={() => onPick(theme.id)}
+                  className="!px-2.5 !py-1.5 !text-[10px]"
+                >
+                  {theme.label}
+                </Btn>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// The chase's front door: smash RANDOM or browse for your poison, then
+// the draft starts immediately.
+export function ThemePickScreen() {
+  const { startSolo, goHome } = useGame()
+
+  return (
+    <div className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-4 px-4 py-8">
+      <h1 className="headline animate-rise text-center text-3xl text-ink">PICK YOUR POISON</h1>
+
+      <button
+        type="button"
+        onClick={() => void startSolo(null)}
+        className="sheet animate-rise group flex w-full items-center gap-4 px-[18px] py-4 text-left transition-colors hover:bg-paper2"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="headline block text-2xl text-ink">RANDOM</span>
+          <span className="mt-0.5 block text-[12px] text-dim">Let the sheet deal. Face whatever comes.</span>
+        </span>
+        <span className="num text-lg text-faint transition-colors group-hover:text-hot">→</span>
+      </button>
+
+      <Sheet className="animate-rise" title="OR CHOOSE THE QUESTION">
+        <ThemeMenu playerCount={1} selected={null} onPick={(id) => void startSolo(id)} />
+      </Sheet>
+
+      <div className="flex justify-center">
+        <Btn onClick={goHome}>BACK</Btn>
       </div>
     </div>
   )
@@ -159,6 +233,8 @@ export function ScoutScreen() {
 export function SetupScreen() {
   const { config, setConfig, createRoom, goHome, netStatus, netError } = useGame()
   const sizes = config.format === 'series' ? [2, 4, 8] : [4, 6, 8]
+  const [browsing, setBrowsing] = useState(false)
+  const chosenTheme = config.theme ?? null
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-2xl flex-col justify-center gap-4 px-4 py-10">
@@ -187,14 +263,28 @@ export function SetupScreen() {
             </Btn>
           ))}
         </div>
-        <div className="cell flex flex-wrap items-center gap-3 border-t border-line">
-          <span className="plate !text-[9px]">PICKS</span>
-          <Btn on={(config.input ?? 'type') === 'type'} onClick={() => setConfig({ input: 'type' })} className="!px-3.5 !py-1.5">
-            TYPE · HARD
-          </Btn>
-          <Btn on={config.input === 'grid'} onClick={() => setConfig({ input: 'grid' })} className="!px-3.5 !py-1.5">
-            BOARD · EASY
-          </Btn>
+        <div className="cell border-t border-line">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="plate !text-[9px]">THEME</span>
+            <Btn on={chosenTheme === null} onClick={() => setConfig({ theme: null })} className="!px-3.5 !py-1.5">
+              RANDOM
+            </Btn>
+            <Btn on={chosenTheme !== null} onClick={() => setBrowsing((b) => !b)} className="!px-3.5 !py-1.5">
+              {chosenTheme !== null ? themeById(chosenTheme).label : 'CHOOSE…'}
+            </Btn>
+          </div>
+          {browsing && (
+            <div className="mt-3 border-t border-line pt-3">
+              <ThemeMenu
+                playerCount={config.leagueSize}
+                selected={chosenTheme}
+                onPick={(id) => {
+                  setConfig({ theme: id })
+                  setBrowsing(false)
+                }}
+              />
+            </div>
+          )}
         </div>
       </Sheet>
 

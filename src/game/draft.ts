@@ -4,22 +4,20 @@ import {
   STARTER_SLOTS,
   canPlaySlot,
   emptyRoster,
+  roleFit,
   slotCompat,
   type Roster,
   type SlotId,
 } from '../engine/lineup'
 import { mulberry32 } from '../engine/prng'
-import { pickDraftTheme, resolveTypedPick, themeById } from './themes'
+import { pickDraftTheme, resolveTypedPick, themeById, themeNeedsPositionless } from './themes'
 
 // ---------------------------------------------------------------- config
 
 // One draft mode: the Theme Draft. A single theme deals at the start and
-// carries the whole draft; everyone answers the same question.
+// carries the whole draft; everyone answers the same question by TYPING
+// names from memory - unlimited guesses, no strikes, no easy board.
 export type DraftMode = 'themes'
-
-// Pick style (lobby-wide, so the competition stays fair):
-// 'type' - name your player from memory; 'grid' - choose from a board.
-export type PickInput = 'type' | 'grid'
 
 export interface DraftPlayer {
   id: string
@@ -28,8 +26,8 @@ export interface DraftPlayer {
 }
 
 export const ROUNDS = 8
-export const STRIKES_PER_PLAYER = 3
 const THEME_OFFER_SIZE = 12
+const WHIFF_LOG_LIMIT = 24
 
 // ----------------------------------------------------------------- state
 
@@ -38,20 +36,20 @@ export interface Offer {
   forPlayerId: string
   round: number
   // The theme couldn't fill this drafter's forced starter needs, so the
-  // board opened up beyond the theme.
+  // board opened up beyond the theme (positional themes only - a
+  // positionless draft never needs it).
   themeFallback?: boolean
 }
 
 export interface TeamState {
   playerId: string
   roster: Roster
-  strikesLeft: number
 }
 
 export type TypeOutcome = 'no-match' | 'off-theme' | 'taken' | 'cant-fit'
 
-// Feedback from the last typed attempt - broadcast so everyone enjoys the
-// whiffs ("Jordan was never a Laker").
+// Feedback from a typed attempt - broadcast so everyone enjoys the whiffs
+// ("Jordan was never a Laker").
 export interface TypeFeedback {
   playerId: string
   query: string
@@ -70,14 +68,18 @@ export interface PickSummary {
 
 export interface DraftState {
   mode: DraftMode
-  input: PickInput
   players: DraftPlayer[]
   teams: Record<string, TeamState>
   order: string[] // snake pick sequence, ROUNDS * players long
   pickIndex: number
   offer: Offer | null
   theme: string | null // the draft's one theme id
+  // Position-locked themes (7-FOOTERS...) can't field legal fives, so the
+  // whole draft plays positionless: anyone in any slot, placed by skills.
+  positionless: boolean
   lastType: TypeFeedback | null
+  // The draft's whiff record, oldest first, capped - the comedy ledger.
+  whiffs: TypeFeedback[]
   lastPick: PickSummary | null
   draftedPids: string[] // one real person per league, regardless of season
   seed: number
@@ -110,23 +112,23 @@ export function initDraft(
   players: DraftPlayer[],
   seed: number,
   ctx: DraftCtx,
-  input: PickInput = 'type',
+  chosenTheme?: string | null,
 ): DraftState {
+  const theme = pickDraftTheme(ctx.pool, players.length, seed, ROUNDS, chosenTheme)
   const state: DraftState = {
     mode,
-    input,
     players,
-    teams: Object.fromEntries(
-      players.map((p) => [p.id, { playerId: p.id, roster: emptyRoster(), strikesLeft: STRIKES_PER_PLAYER }]),
-    ),
+    teams: Object.fromEntries(players.map((p) => [p.id, { playerId: p.id, roster: emptyRoster() }])),
     order: snakeOrder(
       players.map((p) => p.id),
       ROUNDS,
     ),
     pickIndex: 0,
     offer: null,
-    theme: pickDraftTheme(ctx.pool, players.length, seed, ROUNDS),
+    theme,
+    positionless: themeNeedsPositionless(themeById(theme), ctx.pool, players.length),
     lastType: null,
+    whiffs: [],
     lastPick: null,
     draftedPids: [],
     seed,
@@ -158,6 +160,12 @@ function remainingPicksFor(state: DraftState, playerId: string): number {
   return count
 }
 
+// Slot legality for this draft: positionless themes let anyone play
+// anywhere; positional themes enforce real positions.
+function canFill(state: DraftState, card: Card, slot: SlotId): boolean {
+  return state.positionless || canPlaySlot(card, slot)
+}
+
 // ------------------------------------------------------------ offer logic
 
 function availableCards(state: DraftState, ctx: DraftCtx): Card[] {
@@ -173,8 +181,8 @@ function mustFillStarter(state: DraftState, playerId: string): boolean {
   return openStarterSlots(roster).length >= remainingPicksFor(state, playerId)
 }
 
-function fillsOpenStarter(card: Card, roster: Roster): boolean {
-  return openStarterSlots(roster).some((slot) => canPlaySlot(card, slot))
+function fillsOpenStarter(state: DraftState, card: Card, roster: Roster): boolean {
+  return openStarterSlots(roster).some((slot) => canFill(state, card, slot))
 }
 
 // Deterministic season ranking: best overall, then the later year.
@@ -198,31 +206,26 @@ function themeUsableCards(state: DraftState, ctx: DraftCtx, playerId: string): C
   const roster = state.teams[playerId].roster
   const constrain = mustFillStarter(state, playerId)
   const eligible = availableCards(state, ctx).filter(theme.test)
-  return constrain ? eligible.filter((c) => fillsOpenStarter(c, roster)) : eligible
+  return constrain ? eligible.filter((c) => fillsOpenStarter(state, c, roster)) : eligible
 }
 
-// The board. Returns null when the drafter should be typing instead: hard
-// mode with strikes still in hand and a live theme. The board appears for
-// grid lobbies, drafters out of strikes, and dried-up themes (fallback
-// opens past the theme so nobody softlocks).
+// The board. Null while the drafter should be typing - which is almost
+// always. It appears only when a positional theme has genuinely dried up
+// for this drafter's forced starter needs, opening past the theme so
+// nobody softlocks.
 function themeOffer(state: DraftState, ctx: DraftCtx, playerId: string, round: number): Offer | null {
   const team = state.teams[playerId]
   const usable = themeUsableCards(state, ctx, playerId)
-  const fallback = usable.length === 0
-  const gridNeeded = state.input === 'grid' || team.strikesLeft <= 0 || fallback
-  if (!gridNeeded) return null
+  if (usable.length > 0) return null
 
-  let pool = usable
-  if (fallback) {
-    const available = availableCards(state, ctx)
-    const constrain = mustFillStarter(state, playerId)
-    pool = constrain ? available.filter((c) => fillsOpenStarter(c, team.roster)) : available
-  }
+  const available = availableCards(state, ctx)
+  const constrain = mustFillStarter(state, playerId)
+  const pool = constrain ? available.filter((c) => fillsOpenStarter(state, c, team.roster)) : available
 
   const cards = bestSeasonPerPerson(pool)
     .sort((a, b) => (betterSeason(a, b) ? -1 : 1))
     .slice(0, THEME_OFFER_SIZE)
-  return { cards, forPlayerId: playerId, round, ...(fallback ? { themeFallback: true } : {}) }
+  return { cards, forPlayerId: playerId, round, themeFallback: true }
 }
 
 function generateOffer(state: DraftState, ctx: DraftCtx): Offer | null {
@@ -232,11 +235,22 @@ function generateOffer(state: DraftState, ctx: DraftCtx): Offer | null {
 
 // ------------------------------------------------------------- placement
 
-// Where a taken card lands when no slot was chosen. Natural open starter
-// slot first; when starters must be filled prefer a stretch starter;
-// otherwise the bench. Players can rearrange freely via MOVE.
-export function autoPlace(roster: Roster, card: Card, forceStarter: boolean): SlotId {
+// Where a taken card lands when no slot was chosen. Positional drafts:
+// natural open starter slot first, stretch when starters must fill,
+// otherwise the bench. Positionless drafts: the open starter slot whose
+// ROLE best matches the card's skills - the best passer runs point.
+export function autoPlace(roster: Roster, card: Card, forceStarter: boolean, positionless = false): SlotId {
   const open = openStarterSlots(roster)
+
+  if (positionless) {
+    if (open.length > 0) {
+      return open.reduce((best, slot) => (roleFit(card, slot) > roleFit(card, best) ? slot : best))
+    }
+    const bench = BENCH_SLOTS.filter((slot) => roster[slot] === null)
+    if (bench.length > 0) return bench[0]
+    throw new Error('no open slot')
+  }
+
   const naturals = open.filter((slot) => slotCompat(card, slot) === 1)
   if (naturals.length > 0) return naturals[0]
 
@@ -255,12 +269,12 @@ function placeSlot(state: DraftState, playerId: string, card: Card, chosen: Slot
   if (
     chosen &&
     roster[chosen] === null &&
-    canPlaySlot(card, chosen) &&
+    canFill(state, card, chosen) &&
     !(forceStarter && (BENCH_SLOTS as readonly string[]).includes(chosen))
   ) {
     return chosen
   }
-  return autoPlace(roster, card, forceStarter)
+  return autoPlace(roster, card, forceStarter, state.positionless)
 }
 
 // --------------------------------------------------------------- reducer
@@ -272,8 +286,8 @@ export function applyAction(state: DraftState, action: DraftAction, ctx: DraftCt
     const fromCard = team.roster[action.from]
     const toCard = team.roster[action.to]
     if (!fromCard) return state
-    if (!canPlaySlot(fromCard, action.to)) return state
-    if (toCard && !canPlaySlot(toCard, action.from)) return state
+    if (!canFill(state, fromCard, action.to)) return state
+    if (toCard && !canFill(state, toCard, action.from)) return state
     const roster: Roster = { ...team.roster, [action.from]: toCard, [action.to]: fromCard }
     return { ...state, teams: { ...state.teams, [action.playerId]: { ...team, roster } } }
   }
@@ -288,26 +302,25 @@ export function applyAction(state: DraftState, action: DraftAction, ctx: DraftCt
     const team = state.teams[action.playerId]
     const attempt = (state.lastType?.attempt ?? 0) + 1
 
-    // A whiff: record feedback, maybe burn a strike, and open the board
-    // once the drafter is out of strikes.
-    const miss = (outcome: TypeOutcome, matchedName: string | null, strike: boolean): DraftState => {
-      const strikesLeft = strike ? team.strikesLeft - 1 : team.strikesLeft
-      const next: DraftState = {
+    // A whiff: feedback plus a line in the draft's whiff ledger. Guesses
+    // are unlimited - the only cost is public embarrassment.
+    const miss = (outcome: TypeOutcome, matchedName: string | null): DraftState => {
+      const feedback: TypeFeedback = { playerId: action.playerId, query: action.query, outcome, matchedName, attempt }
+      return {
         ...state,
-        teams: { ...state.teams, [action.playerId]: { ...team, strikesLeft } },
-        lastType: { playerId: action.playerId, query: action.query, outcome, matchedName, attempt },
+        lastType: feedback,
+        whiffs: [...state.whiffs, feedback].slice(-WHIFF_LOG_LIMIT),
       }
-      return strikesLeft <= 0 ? { ...next, offer: generateOffer(next, ctx) } : next
     }
 
     const resolved = resolveTypedPick(ctx.pool, action.query)
-    if (!resolved) return miss('no-match', null, false)
-    if (state.draftedPids.includes(resolved.pid)) return miss('taken', resolved.name, true)
+    if (!resolved) return miss('no-match', null)
+    if (state.draftedPids.includes(resolved.pid)) return miss('taken', resolved.name)
     const eligible = ctx.pool.filter((c) => c.pid === resolved.pid && theme.test(c))
-    if (eligible.length === 0) return miss('off-theme', resolved.name, true)
+    if (eligible.length === 0) return miss('off-theme', resolved.name)
     const forceStarter = mustFillStarter(state, action.playerId)
-    const usable = forceStarter ? eligible.filter((c) => fillsOpenStarter(c, team.roster)) : eligible
-    if (usable.length === 0) return miss('cant-fit', resolved.name, true)
+    const usable = forceStarter ? eligible.filter((c) => fillsOpenStarter(state, c, team.roster)) : eligible
+    if (usable.length === 0) return miss('cant-fit', resolved.name)
 
     // The pick lands as that player's best season passing the theme.
     const card = usable.reduce((a, b) => (betterSeason(b, a) ? b : a))
@@ -356,18 +369,19 @@ export function cpuChoose(state: DraftState): DraftAction {
   const offer = state.offer!
   const roster = state.teams[playerId].roster
   const scored = offer.cards.map((card) => {
-    const naturalFill = openStarterSlots(roster).some((slot) => slotCompat(card, slot) === 1)
-    const anyFill = fillsOpenStarter(card, roster)
+    const naturalFill =
+      !state.positionless && openStarterSlots(roster).some((slot) => slotCompat(card, slot) === 1)
+    const anyFill = fillsOpenStarter(state, card, roster)
     return { card, score: card.ovr + (naturalFill ? 6 : anyFill ? 3 : 0) - card.usg * 0.08 }
   })
   scored.sort((a, b) => b.score - a.score)
   return { type: 'TAKE', playerId, cardId: scored[0].card.id }
 }
 
-// With a board up, the CPU taps it like anyone else; otherwise it "types"
-// a name it knows fits. Only names that resolve round-trip to the intended
-// person are considered, so the CPU never burns a strike.
-function cpuChooseTheme(state: DraftState, ctx: DraftCtx): DraftAction {
+// With a fallback board up, the CPU taps it like anyone else; otherwise it
+// "types" a name it knows fits. Only names that resolve round-trip to the
+// intended person are considered, so the CPU never whiffs.
+export function cpuChooseTheme(state: DraftState, ctx: DraftCtx): DraftAction {
   const playerId = currentPlayerId(state)!
   if (state.offer) return cpuChoose(state)
   const roster = state.teams[playerId].roster
@@ -375,8 +389,9 @@ function cpuChooseTheme(state: DraftState, ctx: DraftCtx): DraftAction {
   const roundTrips = raw.filter((card) => resolveTypedPick(ctx.pool, card.name)?.pid === card.pid)
   const usable = roundTrips.length > 0 ? roundTrips : raw
   const scored = usable.map((card) => {
-    const naturalFill = openStarterSlots(roster).some((slot) => slotCompat(card, slot) === 1)
-    const anyFill = fillsOpenStarter(card, roster)
+    const naturalFill =
+      !state.positionless && openStarterSlots(roster).some((slot) => slotCompat(card, slot) === 1)
+    const anyFill = fillsOpenStarter(state, card, roster)
     return { card, score: card.ovr + (naturalFill ? 6 : anyFill ? 3 : 0) - card.usg * 0.08 }
   })
   scored.sort((a, b) => b.score - a.score)
@@ -410,12 +425,14 @@ export function draftFillerTeam(
   const roster = emptyRoster()
   const newPids: string[] = []
 
+  const fillsOpen = (card: Card) => openStarterSlots(roster).some((slot) => canPlaySlot(card, slot))
+
   for (let round = 1; round <= ROUNDS; round++) {
     const openStarters = openStarterSlots(roster)
     const picksLeft = ROUNDS - round + 1
     const constrain = openStarters.length >= picksLeft
     let pool = ctx.pool.filter((c) => !drafted.has(c.pid) && !newPids.includes(c.pid))
-    if (constrain) pool = pool.filter((c) => fillsOpenStarter(c, roster))
+    if (constrain) pool = pool.filter(fillsOpen)
     const ranked = bestSeasonPerPerson(pool).sort((a, b) => (betterSeason(a, b) ? -1 : 1))
     // Sample near the top of the board; higher bias = tighter window.
     const window = Math.max(4, Math.round(ranked.length * (1 - bias) * 0.25))

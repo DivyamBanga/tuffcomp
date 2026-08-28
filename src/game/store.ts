@@ -9,11 +9,11 @@ import type { DraftCtx } from './draft'
 import { applyMatchAction, initMatch, type MatchAction, type MatchConfig, type MatchState } from './match'
 import { loadTrophies, saveTrophy, type Trophy } from './trophies'
 
-export type Screen = 'home' | 'setup' | 'join' | 'lobby' | 'game' | 'trophies'
+export type Screen = 'home' | 'themePick' | 'setup' | 'join' | 'lobby' | 'game' | 'trophies'
 export type SessionMode = 'solo' | 'host' | 'guest'
 export type NetStatus = 'idle' | 'connecting' | 'connected' | 'error'
 
-export const DEFAULT_CONFIG: MatchConfig = { mode: 'themes', format: 'season', leagueSize: 4, seed: 0, input: 'type' }
+export const DEFAULT_CONFIG: MatchConfig = { mode: 'themes', format: 'season', leagueSize: 4, seed: 0, theme: null }
 
 interface GameStore {
   screen: Screen
@@ -31,6 +31,8 @@ interface GameStore {
   autoSimming: boolean
   judgeArmed: boolean
   judging: boolean
+  // What the on-the-clock drafter is typing right now (friends rooms).
+  liveTyping: { playerId: string; text: string } | null
 
   setName: (name: string) => void
   setConfig: (config: Partial<MatchConfig>) => void
@@ -40,12 +42,14 @@ interface GameStore {
   goSetup: (mode: 'solo' | 'host') => void
   goJoin: () => void
   goTrophies: () => void
-  startSolo: (input: MatchConfig['input']) => Promise<void>
+  goThemePick: () => void
+  startSolo: (theme: string | null) => Promise<void>
   createRoom: () => Promise<void>
   hostAddCpu: () => void
   hostStart: () => void
   joinRoom: (code: string) => Promise<void>
   dispatch: (action: MatchAction) => void
+  sendTyping: (text: string) => void
   startCompetition: () => Promise<void>
   simAllRemaining: () => void
 }
@@ -116,6 +120,7 @@ export const useGame = create<GameStore>((set, get) => {
     autoSimming: false,
     judgeArmed: judgeAvailable(),
     judging: false,
+    liveTyping: null,
 
     setName: (name) => {
       saveName(name)
@@ -138,13 +143,22 @@ export const useGame = create<GameStore>((set, get) => {
       teardownNet()
       set({ screen: 'home', sessionMode: null, match: null, lobby: null, netStatus: 'idle', netError: null, trophySaved: false })
     },
-    goSetup: (mode) => set({ screen: 'setup', sessionMode: mode, netError: null }),
+    goSetup: (mode) => {
+      void ensurePool(get, set) // the setup screen's theme menu needs it
+      set({ screen: 'setup', sessionMode: mode, netError: null })
+    },
     goJoin: () => set({ screen: 'join', sessionMode: 'guest', netError: null }),
     goTrophies: () => set({ screen: 'trophies' }),
+    // The chase's theme picker; loads the pool so it can list what's deep
+    // enough to play.
+    goThemePick: () => {
+      void ensurePool(get, set)
+      set({ screen: 'themePick', sessionMode: 'solo', netError: null })
+    },
 
-    // Solo is the chase: draft under the theme, then run 82 games and
-    // post a record.
-    startSolo: async (input) => {
+    // Solo is the chase: draft under the theme (chosen or random), then
+    // run 82 games and post a record.
+    startSolo: async (theme) => {
       const pool = await ensurePool(get, set)
       const ctx: DraftCtx = { pool }
       const { myId, myName } = get()
@@ -153,7 +167,7 @@ export const useGame = create<GameStore>((set, get) => {
         format: 'chase',
         leagueSize: 1,
         seed: Math.floor(Math.random() * 2 ** 31),
-        input,
+        theme,
       }
       const match = initMatch(config, [{ id: myId, name: myName || 'YOU', isCpu: false }], ctx)
       set({ match, screen: 'game', trophySaved: false })
@@ -203,6 +217,10 @@ export const useGame = create<GameStore>((set, get) => {
         set({ netStatus: 'error', netError: err instanceof Error ? err.message : 'Failed to join room' })
       }
     },
+
+    // Broadcast what I'm typing so everyone watches the clock ticking.
+    // Wired to the room transport; solo goes nowhere.
+    sendTyping: () => {},
 
     dispatch: (action) => {
       const { sessionMode, match, pool, myId } = get()

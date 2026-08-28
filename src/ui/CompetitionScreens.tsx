@@ -418,7 +418,7 @@ function ChaseEndScreen({ match }: { match: MatchState }) {
         </p>
       )}
       <div className="animate-rise flex gap-3" style={{ animationDelay: '350ms' }}>
-        <Btn primary onClick={() => void startSolo(match.config.input ?? 'type')}>
+        <Btn primary onClick={() => void startSolo(match.config.theme ?? null)}>
           RUN IT BACK →
         </Btn>
         <Btn onClick={goHome}>HOME</Btn>
