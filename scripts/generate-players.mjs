@@ -118,6 +118,10 @@ function normalizeName(name) {
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
+    .replace(/ı/g, 'i')
+    .replace(/ł/g, 'l')
+    .replace(/ø/g, 'o')
+    .replace(/đ/g, 'd')
     .replace(/[.'`]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
@@ -208,7 +212,7 @@ for (const [key, rows] of perGameByKey) {
   // Minutes weren't recorded before 1952; where they exist, require a real role.
   if (seasonHasMp.get(season) && mpg < 16) continue
 
-  seasonPool.get(season) ?? seasonPool.set(season, [])
+  if (!seasonPool.has(season)) seasonPool.set(season, [])
   seasonPool.get(season).push({ key, pg, adv, teams, rawPos: pg.pos })
 }
 

@@ -39,8 +39,8 @@ function weightedAttrAvg(roster: Roster, key: keyof Card['attrs']): number {
 // Distills a roster into the numbers the game sim runs on. Chemistry and
 // balance (from the evaluation engine) nudge offense/defense so "best
 // fitting" teams genuinely win more - the algorithm the game is built on.
-export function simProfile(teamId: string, roster: Roster): TeamSimProfile {
-  const evaluation = evaluateTeam(roster)
+export function simProfile(teamId: string, roster: Roster, positionless = false): TeamSimProfile {
+  const evaluation = evaluateTeam(roster, positionless)
 
   let offense =
     0.52 * weightedAttrAvg(roster, 'sc') +

@@ -42,6 +42,28 @@ export function canPlaySlot(card: Card, slot: SlotId): boolean {
   return slotCompat(card, slot) > ILLEGAL
 }
 
+// How naturally a card's SKILLS fit a slot's role, for positionless drafts
+// (7-footers, floor generals...) where anyone can play anywhere: the point
+// slot wants the best passer, the wings want buckets and shooting, the
+// bigs want boards and rim protection. 0..1.
+export function roleFit(card: Card, slot: SlotId): number {
+  if (slot === 'B1' || slot === 'B2' || slot === 'B3') return 1
+  const n = (v: number) => (v - 25) / 74
+  const a = card.attrs
+  switch (slot) {
+    case 'PG':
+      return n(a.pm)
+    case 'SG':
+      return 0.55 * n(a.sc) + 0.45 * n(a.sh)
+    case 'SF':
+      return 0.4 * n(a.sc) + 0.3 * n(a.sh) + 0.3 * n(a.df)
+    case 'PF':
+      return 0.55 * n(a.rb) + 0.45 * n(a.df)
+    case 'C':
+      return 0.6 * n(a.rm) + 0.4 * n(a.rb)
+  }
+}
+
 export function eligibleSlots(card: Card): SlotId[] {
   return ALL_SLOTS.filter((slot) => canPlaySlot(card, slot))
 }

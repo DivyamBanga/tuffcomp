@@ -1,5 +1,5 @@
 import type { Card } from '../types'
-import { ALL_SLOTS, rosterCards, slotCompat, starters, type Roster } from './lineup'
+import { ALL_SLOTS, roleFit, rosterCards, slotCompat, starters, type Roster } from './lineup'
 
 export interface NeedScore {
   name: string
@@ -58,10 +58,16 @@ function computeQuality(roster: Roster): number {
 
 // ---------------------------------------------------------------------- fit
 
-function computeFit(roster: Roster): number {
+// Positional drafts score how legally each card sits in its slot; a
+// positionless draft (7-footers, floor generals...) scores how well each
+// card's SKILLS match the slot's role instead - Jokic at point is a
+// featured fit, not a violation.
+function computeFit(roster: Roster, positionless: boolean): number {
   const filled = ALL_SLOTS.filter((slot) => roster[slot] !== null)
   if (filled.length === 0) return 0
-  const total = filled.reduce((sum, slot) => sum + slotCompat(roster[slot]!, slot), 0)
+  const score = (slot: (typeof filled)[number]) =>
+    positionless ? 0.45 + 0.55 * roleFit(roster[slot]!, slot) : slotCompat(roster[slot]!, slot)
+  const total = filled.reduce((sum, slot) => sum + score(slot), 0)
   return clamp(Math.round((total / filled.length) * 100), 0, 100)
 }
 
@@ -190,9 +196,9 @@ function summarize(evaluation: Omit<TeamEvaluation, 'summary'>, roster: Roster):
 
 export const POWER_WEIGHTS = { quality: 0.4, fit: 0.15, chemistry: 0.15, balance: 0.3 }
 
-export function evaluateTeam(roster: Roster): TeamEvaluation {
+export function evaluateTeam(roster: Roster, positionless = false): TeamEvaluation {
   const quality = computeQuality(roster)
-  const fit = computeFit(roster)
+  const fit = computeFit(roster, positionless)
   const { score: chemistry, duos } = computeChemistry(roster)
   const balance = computeBalance(roster)
   const power = clamp(
