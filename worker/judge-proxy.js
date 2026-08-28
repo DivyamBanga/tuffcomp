@@ -15,9 +15,9 @@
 // src/llm/judge.ts.
 
 const MODEL = 'claude-sonnet-5'
-const MAX_TOKENS = 4000
-const MAX_PROMPT_CHARS = 14000
-const MAX_TEAMS = 12
+const MAX_TOKENS = 8000
+const MAX_PROMPT_CHARS = 26000
+const MAX_TEAMS = 16
 
 const ALLOWED_ORIGINS = ['https://divyambanga.github.io', 'http://localhost:5173', 'http://127.0.0.1:5173']
 
@@ -26,9 +26,11 @@ const SYSTEM_PROMPT = `You are the veteran head scout for a fantasy league of dr
 Judge like a real front office:
 - Star power decides playoff series: weigh each team's best two or three players heavily.
 - Offense needs shooting and spacing around its scorers, and real playmaking to feed them.
-- There is only one ball: several 30%+ usage scorers on one roster clash and lose value.
+- There is only one ball: several 30%+ usage scorers on one roster clash and lose value; check each team's five-man usage total.
 - Defense travels: perimeter defense, rim protection, and rebounding win ugly games.
-- Fit and cohesion matter: complementary roles, positional balance, and shared eras or real-life teammates lift a roster; a pile of redundant stars does not.
+- Fit and cohesion matter: complementary roles, positional balance, real-life teammates (the listed real duos actually played together), and a shared era lift a roster; a pile of redundant stars does not.
+- Use the league's theme for context. If the league is marked POSITIONLESS, judge lineups by skill roles, not listed positions - a playmaking giant running point is a feature.
+- Pre-1980 seasons had no three-point line and thinner stat tracking; judge those players by dominance in their own time, not missing threes.
 
 Score each team 0-100 on: offense, defense, star (star power ceiling), cohesion (fit and role balance). Spread the scores honestly - the best team in a category should land near 90+, the weakest near 40 or below. Write each blurb as one punchy scouting sentence under 120 characters, plain language, at most one player name.`
 
@@ -88,7 +90,8 @@ export default {
 
     const prompt = typeof body?.prompt === 'string' ? body.prompt : ''
     const teamIds = Array.isArray(body?.teamIds) ? body.teamIds.filter((x) => typeof x === 'string') : []
-    // Only judge-shaped requests get through to the paid API.
+    // Only judge-shaped requests get through to the paid API. Chase mode
+    // sends up to 15 teams (you plus the whole slate).
     if (
       !prompt.startsWith('Here are the') ||
       prompt.length > MAX_PROMPT_CHARS ||
@@ -110,7 +113,7 @@ export default {
         max_tokens: MAX_TOKENS,
         system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content: prompt }],
-        output_config: { effort: 'medium', format: { type: 'json_schema', schema: SCHEMA } },
+        output_config: { effort: 'high', format: { type: 'json_schema', schema: SCHEMA } },
       }),
     })
 

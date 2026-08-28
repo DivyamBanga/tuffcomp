@@ -1,5 +1,6 @@
 import type { Card } from '../types'
-import { ALL_SLOTS, type Roster } from '../engine/lineup'
+import { ALL_SLOTS, rosterCards, starters, type Roster } from '../engine/lineup'
+import { realTeammatePairs } from '../engine/evaluate'
 
 // ----------------------------------------------------------------- the key
 //
@@ -54,7 +55,7 @@ export function hasJudgeKey(): boolean {
 
 // Keep model and token budget in sync with worker/judge-proxy.js.
 export const JUDGE_MODEL = 'claude-sonnet-5'
-const JUDGE_MAX_TOKENS = 4000
+const JUDGE_MAX_TOKENS = 8000
 
 export interface TeamJudgment {
   offense: number
@@ -78,9 +79,11 @@ const SYSTEM_PROMPT = `You are the veteran head scout for a fantasy league of dr
 Judge like a real front office:
 - Star power decides playoff series: weigh each team's best two or three players heavily.
 - Offense needs shooting and spacing around its scorers, and real playmaking to feed them.
-- There is only one ball: several 30%+ usage scorers on one roster clash and lose value.
+- There is only one ball: several 30%+ usage scorers on one roster clash and lose value; check each team's five-man usage total.
 - Defense travels: perimeter defense, rim protection, and rebounding win ugly games.
-- Fit and cohesion matter: complementary roles, positional balance, and shared eras or real-life teammates lift a roster; a pile of redundant stars does not.
+- Fit and cohesion matter: complementary roles, positional balance, real-life teammates (the listed real duos actually played together), and a shared era lift a roster; a pile of redundant stars does not.
+- Use the league's theme for context. If the league is marked POSITIONLESS, judge lineups by skill roles, not listed positions - a playmaking giant running point is a feature.
+- Pre-1980 seasons had no three-point line and thinner stat tracking; judge those players by dominance in their own time, not missing threes.
 
 Score each team 0-100 on: offense, defense, star (star power ceiling), cohesion (fit and role balance). Spread the scores honestly - the best team in a category should land near 90+, the weakest near 40 or below. Write each blurb as one punchy scouting sentence under 120 characters, plain language, at most one player name.`
 
@@ -90,13 +93,45 @@ function cardLine(slot: string, card: Card | null): string {
   return `  ${slot}: '${String(card.season).slice(2)} ${card.name} | OVR ${card.ovr} | ${card.stats.pts}p ${card.stats.reb}r ${card.stats.ast}a | 3P ${card.stats.tp}% | usage ${card.usg}% | scoring ${a.sc} shooting ${a.sh} playmaking ${a.pm} rebounding ${a.rb} defense ${a.df} rim ${a.rm}`
 }
 
-export function buildJudgePrompt(entries: { id: string; name: string }[], rosters: Record<string, Roster>): string {
+// Roster-level context so the scout reasons about fit, not just talent:
+// five-man usage load, floor spacing, real-life duos, era spread.
+function teamProfileLine(roster: Roster): string {
+  const five = starters(roster)
+  const cards = rosterCards(roster)
+  if (cards.length === 0) return '  profile: empty roster'
+  const usage = Math.round(five.reduce((sum, c) => sum + c.usg, 0))
+  const shooters = five.filter((c) => c.attrs.sh >= 70).length
+  const duos = realTeammatePairs(cards)
+    .slice(0, 3)
+    .map(([a, b]) => `${a.name.split(' ').at(-1)}+${b.name.split(' ').at(-1)} ('${String(a.season).slice(2)})`)
+  const seasons = cards.map((c) => c.season)
+  return `  profile: five-man usage ${usage}% | 70+ shooters ${shooters} | real duos: ${
+    duos.length > 0 ? duos.join(', ') : 'none'
+  } | seasons ${Math.min(...seasons)}-${Math.max(...seasons)}`
+}
+
+export interface JudgeContext {
+  themeLabel?: string
+  themeDetail?: string
+  positionless?: boolean
+}
+
+export function buildJudgePrompt(
+  entries: { id: string; name: string }[],
+  rosters: Record<string, Roster>,
+  context: JudgeContext = {},
+): string {
   const teams = entries.map((entry) => {
     const roster = rosters[entry.id]
     const lines = ALL_SLOTS.map((slot) => cardLine(slot, roster[slot]))
-    return `TEAM ${entry.name} (teamId: ${entry.id})\n${lines.join('\n')}`
+    return `TEAM ${entry.name} (teamId: ${entry.id})\n${lines.join('\n')}\n${teamProfileLine(roster)}`
   })
-  return `Here are the ${entries.length} drafted teams. Slots PG-C are the starting five; B1-B3 are bench.\n\n${teams.join('\n\n')}\n\nRate every team.`
+  const themeLine = context.themeLabel
+    ? `\nLEAGUE THEME: ${context.themeLabel}${context.themeDetail ? ` - ${context.themeDetail}` : ''}${
+        context.positionless ? ' [POSITIONLESS: anyone plays any slot, placed by skills]' : ''
+      }`
+    : ''
+  return `Here are the ${entries.length} drafted teams. Slots PG-C are the starting five; B1-B3 are bench.${themeLine}\n\n${teams.join('\n\n')}\n\nRate every team.`
 }
 
 // Strict schema so the model cannot return malformed JSON.
@@ -164,11 +199,11 @@ export function parseJudgment(text: string, expectedIds: string[]): Record<strin
 // ------------------------------------------------------------------ blend
 //
 // The judgment nudges the deterministic sim, never replaces it. Scores are
-// centered on the league mean and capped, so even a wild judgment can only
-// swing a team a few points per game - fair always.
+// centered on the league mean and capped: a sharp scout read is worth up
+// to ~5 points a game, and even a wild judgment can never break fairness.
 
-const CAP_MAIN = 4
-const CAP_SIDE = 2
+const CAP_MAIN = 6
+const CAP_SIDE = 3
 
 const clampAbs = (n: number, cap: number) => Math.max(-cap, Math.min(cap, n))
 
@@ -195,8 +230,8 @@ export function judgeAdjustments(judgment: LeagueJudgment, teamIds: string[]): M
       continue
     }
     out.set(id, {
-      dOff: clampAbs((t.offense - meanOff) * 0.2, CAP_MAIN) + clampAbs((t.star - meanStar) * 0.1, CAP_SIDE),
-      dDef: clampAbs((t.defense - meanDef) * 0.2, CAP_MAIN) + clampAbs((t.cohesion - meanCoh) * 0.1, CAP_SIDE),
+      dOff: clampAbs((t.offense - meanOff) * 0.25, CAP_MAIN) + clampAbs((t.star - meanStar) * 0.12, CAP_SIDE),
+      dDef: clampAbs((t.defense - meanDef) * 0.25, CAP_MAIN) + clampAbs((t.cohesion - meanCoh) * 0.12, CAP_SIDE),
     })
   }
   return out
@@ -211,8 +246,9 @@ export function judgeAdjustments(judgment: LeagueJudgment, teamIds: string[]): M
 export async function judgeLeague(
   entries: { id: string; name: string }[],
   rosters: Record<string, Roster>,
+  context: JudgeContext = {},
 ): Promise<LeagueJudgment | null> {
-  const prompt = buildJudgePrompt(entries, rosters)
+  const prompt = buildJudgePrompt(entries, rosters, context)
   const ids = entries.map((e) => e.id)
 
   if (judgeViaProxy()) {
@@ -228,7 +264,8 @@ async function judgeThroughProxy(prompt: string, ids: string[]): Promise<LeagueJ
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ prompt, teamIds: ids }),
-      signal: AbortSignal.timeout(45_000),
+      // Effort-high scouting of a full 15-team chase runs 40-60s.
+      signal: AbortSignal.timeout(100_000),
     })
     if (!response.ok) return null
     const data = (await response.json()) as { model?: string; text?: string }
@@ -249,14 +286,14 @@ async function judgeDirect(prompt: string, ids: string[]): Promise<LeagueJudgmen
       apiKey,
       dangerouslyAllowBrowser: true,
       maxRetries: 1,
-      timeout: 60_000,
+      timeout: 120_000,
     })
     const response = await client.messages.create({
       model: JUDGE_MODEL,
       max_tokens: JUDGE_MAX_TOKENS,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: prompt }],
-      output_config: { effort: 'medium', format: { type: 'json_schema', schema: JUDGE_SCHEMA } },
+      output_config: { effort: 'high', format: { type: 'json_schema', schema: JUDGE_SCHEMA } },
     })
     const text = response.content.find((block) => block.type === 'text')?.text ?? ''
     const teams = parseJudgment(text, ids)

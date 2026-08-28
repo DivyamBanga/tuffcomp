@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { loadCards } from '../data/loadCards'
-import { clearJudgeKey, judgeAvailable, judgeLeague, saveJudgeKey } from '../llm/judge'
+import { clearJudgeKey, judgeAvailable, judgeLeague, saveJudgeKey, type JudgeContext } from '../llm/judge'
+import { themeById } from './themes'
 import { myPlayerId, saveName, savedName } from '../net/identity'
 import { makeRoomCode, type LobbySnapshot } from '../net/protocol'
 import { GuestRoom, HostRoom, realPeerFactory } from '../net/room'
@@ -278,7 +279,12 @@ export const useGame = create<GameStore>((set, get) => {
       if (match && match.phase === 'preview' && match.judge === null && judgeAvailable()) {
         set({ judging: true })
         try {
-          const judgment = await judgeLeague(match.entries, match.rosters)
+          const theme = match.draft?.theme ? themeById(match.draft.theme) : null
+          const context: JudgeContext = {
+            ...(theme ? { themeLabel: theme.label, themeDetail: theme.detail } : {}),
+            positionless: match.positionless,
+          }
+          const judgment = await judgeLeague(match.entries, match.rosters, context)
           if (judgment) get().dispatch({ type: 'SET_JUDGE', judgment })
         } finally {
           set({ judging: false })
