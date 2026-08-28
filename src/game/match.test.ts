@@ -108,6 +108,28 @@ describe('straight series format', () => {
   })
 })
 
+describe('positionless chase (7-footers only)', () => {
+  it('drafts giants at every slot, generates the slate, and sims clean', () => {
+    const me: DraftPlayer[] = [{ id: 'me', name: 'Div', isCpu: false }]
+    let state = initMatch({ mode: 'themes', format: 'chase', leagueSize: 1, seed: 8, theme: 'bio-sevenfeet' }, me, ctx)
+    expect(state.draft!.positionless).toBe(true)
+    state = draftToCompletion(state)
+    expect(state.positionless).toBe(true)
+    expect(state.entries.filter((e) => e.isFiller).length).toBe(14)
+
+    // Positionless moves: the 7-foot "PG" may swap anywhere pre-tipoff.
+    const pg = state.rosters.me.PG!
+    const moved = applyMatchAction(state, { type: 'MOVE_AFTER_DRAFT', playerId: 'me', from: 'PG', to: 'C' }, ctx)
+    expect(moved.rosters.me.C!.id).toBe(pg.id)
+
+    state = applyMatchAction(state, { type: 'BEGIN_COMPETITION' }, ctx)
+    expect(state.phase).toBe('season')
+    expect(state.season!.schedule.length).toBe(82)
+    for (let i = 0; i < 5; i++) state = applyMatchAction(state, { type: 'SIM_NEXT' }, ctx)
+    expect(state.season!.played.length).toBe(5)
+  })
+})
+
 describe('preview-phase lineup moves', () => {
   it('lets a player legally rearrange and rejects illegal moves', () => {
     let state = initMatch({ mode: 'themes', format: 'series', leagueSize: 2, seed: 15, theme: 'era-90s' }, SOLO, ctx)

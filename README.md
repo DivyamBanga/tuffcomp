@@ -1,45 +1,59 @@
 # RING CHASERS
 
 An NBA drafting game for me and my friends. One theme deals at the start,
-think Lakers only or 40% from deep or the '90s only, everyone drafts real
-player seasons on it, then the sim plays it out.
+think Lakers only, 7-footers only, ringless legends or the bald squad,
+everyone drafts real player seasons on it by typing names from memory,
+then the sim plays it out.
 
 Play it here: https://divyambanga.github.io/tuffcomp/
 
 ## How it plays
 
-Every draft gets one theme that carries all 8 rounds. Type your picks from
-memory, with an autocomplete that helps spelling but never says who fits.
-Wrong calls burn strikes. Your pick lands as that player's best season
-fitting the theme, and you choose which slot it fills. One real person per
-league.
+Pick a theme or smash RANDOM. One theme carries all 8 rounds. Type your
+picks from memory with unlimited guesses, no strikes, no easy board. Every
+wrong call goes in the public whiff ledger forever. An autocomplete helps
+spelling but never says who fits. Your pick lands as that player's best
+season fitting the theme, and you choose which slot it fills. One real
+person per league.
+
+Themes that can't field a legal five, like 7-footers only, play
+positionless: anyone can play anywhere and placement goes by skills, so
+Jokic runs the point and Wemby guards the rim.
 
 Solo is the chase: draft your 8, then survive 82 games against a stacked
 field. The record is your score. 82-0 takes the ring.
 
-With friends: host a room, share the 4 letter code, snake draft head to
-head, then a season with playoffs or straight best-of-7s. No accounts, no
-server, peer to peer.
+With friends: host a room, share the 4 letter code, pick the theme in
+setup, snake draft head to head while everyone watches the live keystrokes
+of whoever is on the clock, then a season with playoffs or straight
+best-of-7s. No accounts, no server, peer to peer.
 
-An AI scout (Claude) judges every roster for star power, fit, shooting and
-defense before tip-off, and nudges the sim within hard caps so it can never
-break fairness. Games have real form nights, a star can go for 50, and the
-game log keeps every box score one tap away.
+An AI scout (Claude, effort high) reads every roster, the theme, the real
+duos and the usage load before tip-off, and nudges the sim within hard
+caps so it can never break fairness. It scouts the chase too, all 15
+teams in one look.
 
-## The look
+## The themes
 
-Monochrome drafting sheet, big photos, big numbers, almost no words. Gold
-shows up only for perfection.
+60+ of them: 25 franchises with full lineage (Mikan's Minneapolis counts
+as Lakers), every era back to 1947, stat lines like 25+ PPG and 40% from
+deep, measurables like under 25, old man game, 7-footers, 6'4 and under
+and heavyweights, career paths like one-team loyals, journeymen, ringless
+and rookie seasons, hardware like MVP, DPOY, never an All-Star, number
+one picks and undrafted, plus curated lists: international, white guys,
+bald squad, lefties, Canadians and NBA bloodlines.
 
 ## The real data
 
-11,408 real player seasons, 2,054 players, real stats and real NBA
-headshots, era relative ratings so 1987 competes fairly with 2026. Season
-stats come from
+14,352 real player seasons, 2,558 players, every NBA season from 1947 to
+2026 with real stats and real headshots. Ratings are 2K style: era
+relative percentiles so 1962 competes fairly with 2026, fringe guys at
+68, the season's best around 95, MVP years 96 to 98, and a ten card 99
+club for the all-time peaks. Season stats come from
 [sumitrodatta/bball-reference-datasets](https://github.com/sumitrodatta/bball-reference-datasets),
 data derived from Basketball Reference. Headshot photo ids come from
-[swar/nba_api](https://github.com/swar/nba_api). Photos are served from the
-NBA's public CDN.
+[swar/nba_api](https://github.com/swar/nba_api). Photos are served from
+the NBA's public CDN.
 
 To regenerate the card pool:
 
@@ -53,11 +67,12 @@ npm run data:generate
 - React, TypeScript, Vite, Tailwind, zustand
 - Pure TypeScript engines for evaluation and simulation, fully seeded and deterministic
 - PeerJS WebRTC for online rooms, no backend anywhere
-- Claude judge behind a one file Cloudflare Worker (worker/), key held as a
+- Claude scout behind a one file Cloudflare Worker (worker/), key held as a
   Worker secret, never in the bundle
-- 93 tests with Vitest, deployed free on GitHub Pages
+- 110 tests with Vitest, deployed free on GitHub Pages
 
 ## Status
 
-v3 is live: theme drafts, the 82-0 chase, friends rooms, AI scout, the
-drafting sheet look. See PRD.md for the full design.
+v4 is live: all of NBA history, 2K style ratings, 60+ themes with a
+picker, unlimited blind typing, positionless drafts, live keystrokes in
+rooms, and a sharper scout. See PRD.md for the full design.
