@@ -31,9 +31,12 @@ export interface LobbySnapshot {
 
 // Everything on the wire. The host broadcasts full snapshots; guests send
 // intents. Snapshots are small (tens of KB) so no delta logic is needed.
+// TYPING is ephemeral flavor: the on-the-clock drafter's live keystrokes,
+// relayed by the host so the whole room watches them think.
 export type NetMessage =
   | { t: 'HELLO'; playerId: string; name: string }
   | { t: 'WELCOME'; playerId: string }
   | { t: 'REJECTED'; reason: string }
   | { t: 'SNAPSHOT'; lobby: LobbySnapshot; match: MatchState | null }
   | { t: 'ACTION'; action: MatchAction }
+  | { t: 'TYPING'; playerId: string; text: string }

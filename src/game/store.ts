@@ -57,6 +57,8 @@ interface GameStore {
 let hostRoom: HostRoom | null = null
 let guestRoom: GuestRoom | null = null
 let autoSimTimer: number | null = null
+let typingLastSent = 0
+let typingTimer: number | null = null
 
 async function ensurePool(get: () => GameStore, set: (partial: Partial<GameStore>) => void): Promise<Card[]> {
   const existing = get().pool
@@ -100,8 +102,13 @@ export const useGame = create<GameStore>((set, get) => {
   }
 
   const applySnapshot = (lobby: LobbySnapshot, match: MatchState | null) => {
-    set({ lobby, match, netStatus: 'connected', screen: match ? 'game' : 'lobby' })
+    // A snapshot means something happened - any live-typing ghost is stale.
+    set({ lobby, match, netStatus: 'connected', screen: match ? 'game' : 'lobby', liveTyping: null })
     maybeRecordTrophy(match)
+  }
+
+  const applyTyping = (playerId: string, text: string) => {
+    set({ liveTyping: { playerId, text } })
   }
 
   return {
@@ -183,6 +190,7 @@ export const useGame = create<GameStore>((set, get) => {
         const code = makeRoomCode()
         hostRoom = new HostRoom(factory, code, { playerId: myId, name: myName || 'HOST' }, seeded, { pool }, {
           onSnapshot: applySnapshot,
+          onTyping: applyTyping,
           onError: (message) => set({ netStatus: 'error', netError: message }),
         })
         set({ screen: 'lobby' })
@@ -209,6 +217,7 @@ export const useGame = create<GameStore>((set, get) => {
         const { myId, myName } = get()
         guestRoom = new GuestRoom(factory, code, { playerId: myId, name: myName || 'GUEST' }, {
           onSnapshot: applySnapshot,
+          onTyping: applyTyping,
           onWelcome: () => set({ netStatus: 'connected' }),
           onRejected: (reason) => set({ netStatus: 'error', netError: reason }),
           onError: (message) => set({ netStatus: 'error', netError: message }),
@@ -219,8 +228,28 @@ export const useGame = create<GameStore>((set, get) => {
     },
 
     // Broadcast what I'm typing so everyone watches the clock ticking.
-    // Wired to the room transport; solo goes nowhere.
-    sendTyping: () => {},
+    // Throttled with a trailing flush so the wire stays light but the
+    // last keystroke always lands. Solo goes nowhere.
+    sendTyping: (text) => {
+      const { sessionMode, match, myId } = get()
+      if (sessionMode !== 'host' && sessionMode !== 'guest') return
+      if (!match || match.phase !== 'draft') return
+      const send = (t: string) => {
+        if (sessionMode === 'guest') guestRoom?.sendTyping(myId, t)
+        else hostRoom?.typingFrom(myId, myId, t)
+      }
+      if (typingTimer !== null) window.clearTimeout(typingTimer)
+      const now = Date.now()
+      if (now - typingLastSent >= 120) {
+        typingLastSent = now
+        send(text)
+      } else {
+        typingTimer = window.setTimeout(() => {
+          typingLastSent = Date.now()
+          send(text)
+        }, 120)
+      }
+    },
 
     dispatch: (action) => {
       const { sessionMode, match, pool, myId } = get()

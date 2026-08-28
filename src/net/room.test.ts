@@ -82,6 +82,7 @@ beforeAll(async () => {
 function makeRoom(factory: PeerFactory) {
   let hostLobby: LobbySnapshot | null = null
   let hostMatch: MatchState | null = null
+  let typing: { playerId: string; text: string } | null = null
   const host = new HostRoom(
     factory,
     'TEST',
@@ -93,10 +94,13 @@ function makeRoom(factory: PeerFactory) {
         hostLobby = lobby
         hostMatch = match
       },
+      onTyping: (playerId, text) => {
+        typing = { playerId, text }
+      },
       onError: () => {},
     },
   )
-  return { host, hostLobby: () => hostLobby!, hostMatch: () => hostMatch }
+  return { host, hostLobby: () => hostLobby!, hostMatch: () => hostMatch, typing: () => typing }
 }
 
 function joinRoom(factory: PeerFactory, playerId: string, name: string) {
@@ -104,10 +108,14 @@ function joinRoom(factory: PeerFactory, playerId: string, name: string) {
   let match: MatchState | null = null
   let welcomed = false
   let rejection: string | null = null
+  let typing: { playerId: string; text: string } | null = null
   const guest = new GuestRoom(factory, 'TEST', { playerId, name }, {
     onSnapshot: (l, m) => {
       lobby = l
       match = m
+    },
+    onTyping: (pid, text) => {
+      typing = { playerId: pid, text }
     },
     onWelcome: () => {
       welcomed = true
@@ -123,6 +131,7 @@ function joinRoom(factory: PeerFactory, playerId: string, name: string) {
     match: () => match,
     welcomed: () => welcomed,
     rejection: () => rejection,
+    typing: () => typing,
   }
 }
 
@@ -219,6 +228,27 @@ describe('host + guests over the fake wire', () => {
     const rejoin = joinRoom(factory, 'guest-1', 'Jay')
     expect(rejoin.welcomed()).toBe(true)
     expect(rejoin.match()!.phase).toBe('draft')
+    room.host.destroy()
+  })
+
+  it('relays live typing only from the drafter on the clock', () => {
+    const factory = makeFakeNetwork()
+    const room = makeRoom(factory)
+    const g1 = joinRoom(factory, 'guest-1', 'Jay')
+    room.host.startMatch()
+
+    // Host is on the clock first - their keystrokes reach the guest.
+    room.host.typingFrom('host-1', 'host-1', 'wemb')
+    expect(g1.typing()).toEqual({ playerId: 'host-1', text: 'wemb' })
+
+    // The guest is NOT on the clock - their typing is dropped, nothing
+    // changes on the host side.
+    g1.guest.sendTyping('guest-1', 'jordan')
+    expect(room.typing()).toEqual({ playerId: 'host-1', text: 'wemb' })
+
+    // Spoofing someone else's playerId is dropped too (sender mismatch).
+    g1.guest.sendTyping('host-1', 'hax')
+    expect(room.typing()).toEqual({ playerId: 'host-1', text: 'wemb' })
     room.host.destroy()
   })
 

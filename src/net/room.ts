@@ -1,4 +1,4 @@
-import type { DraftCtx, DraftPlayer } from '../game/draft'
+import { currentPlayerId, type DraftCtx, type DraftPlayer } from '../game/draft'
 import { applyMatchAction, initMatch, type MatchAction, type MatchConfig, type MatchState } from '../game/match'
 import { peerIdForCode, type LobbySnapshot, type NetMessage } from './protocol'
 
@@ -24,6 +24,8 @@ export type PeerFactory = (peerId?: string) => WirePeer
 export interface RoomEvents {
   onSnapshot: (lobby: LobbySnapshot, match: MatchState | null) => void
   onError: (message: string) => void
+  // Live keystrokes from the drafter on the clock (ephemeral, not state).
+  onTyping?: (playerId: string, text: string) => void
 }
 
 const MAX_PLAYERS = 8
@@ -89,6 +91,9 @@ export class HostRoom {
       if (msg.t === 'ACTION' && seatId !== null) {
         this.dispatchFrom(seatId, msg.action)
       }
+      if (msg.t === 'TYPING' && seatId !== null) {
+        this.typingFrom(seatId, msg.playerId, msg.text)
+      }
     })
     conn.onClose(() => {
       // Keep the seat (rejoinable by the same playerId); just drop the pipe.
@@ -122,6 +127,19 @@ export class HostRoom {
       this.match = next
       this.publish()
     }
+  }
+
+  // Relay live typing to the whole room - only from the drafter actually
+  // on the clock, so spoofed or stale keystrokes go nowhere.
+  typingFrom(senderId: string, playerId: string, text: string) {
+    if (senderId !== playerId) return
+    const draft = this.match?.draft
+    if (!draft || this.match?.phase !== 'draft' || currentPlayerId(draft) !== playerId) return
+    const msg: NetMessage = { t: 'TYPING', playerId, text: text.slice(0, 32) }
+    for (const [id, conn] of this.conns) {
+      if (id !== playerId) conn.send(msg)
+    }
+    this.events.onTyping?.(playerId, text.slice(0, 32))
   }
 
   addCpu(name: string) {
@@ -179,6 +197,7 @@ export class GuestRoom {
         if (msg.t === 'WELCOME') this.events.onWelcome()
         else if (msg.t === 'REJECTED') this.events.onRejected(msg.reason)
         else if (msg.t === 'SNAPSHOT') this.events.onSnapshot(msg.lobby, msg.match)
+        else if (msg.t === 'TYPING') this.events.onTyping?.(msg.playerId, msg.text)
       })
       conn.onClose(() => events.onError('Connection to host closed'))
       conn.send({ t: 'HELLO', playerId: me.playerId, name: me.name } satisfies NetMessage)
@@ -187,6 +206,10 @@ export class GuestRoom {
 
   sendAction(action: MatchAction) {
     this.conn?.send({ t: 'ACTION', action } satisfies NetMessage)
+  }
+
+  sendTyping(playerId: string, text: string) {
+    this.conn?.send({ t: 'TYPING', playerId, text } satisfies NetMessage)
   }
 
   destroy() {
