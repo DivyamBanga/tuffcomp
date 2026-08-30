@@ -195,14 +195,17 @@ league to 4/6/8.
 
 Pure TS (`src/engine/`), zero UI imports, every score 0-100 with a plain-language summary.
 
-- Quality: overall talent, starters weighted over bench.
-- Fit: slot legality/compatibility across the roster.
+- Quality: star-weighted overall talent (blendedTalent, OVR units), starters
+  weighted over bench, superstar premium.
+- Fit: slot legality/compatibility across the roster (role-match in
+  positionless drafts).
 - Chemistry: real-life teammates (same franchise within a 2-season window - '96 Jordan +
   '96 Pippen actually played together) plus era cohesion. No fabricated links.
 - Balance: six needs (scoring punch, outside shooting, playmaking, rebounding, perimeter
-  defense, rim protection), gap penalties, and a "there's only one ball" usage-overload
-  penalty - five 30%-usage stars rate below a complementary five.
-- Team power: 40% quality + 15% fit + 15% chemistry + 30% balance.
+  defense, rim protection), gap penalties, and a MILD "there's only one ball"
+  usage-overload tax (threshold 120, capped - talent rules by design,
+  user-confirmed 2026-08-29).
+- Team power: 60% quality + 10% fit + 10% chemistry + 20% balance.
 
 ---
 
@@ -210,9 +213,12 @@ Pure TS (`src/engine/`), zero UI imports, every score 0-100 with a plain-languag
 
 Pure TS on a seeded PRNG - a seed fully determines every game, so results replay exactly.
 
-- Team profiles: offense (scoring/shooting/playmaking) and defense (defense/rim/rebounding),
-  nudged by chemistry, balance, and usage overload - best-fitting teams genuinely win more.
-  When the AI judge ran, its capped adjustments (section 6b) shift these a few points.
+- Team profiles: star-weighted roster TALENT (OVR) feeds both offense and
+  defense - the best players genuinely decide games - shaped by attributes
+  (scoring/shooting/playmaking vs defense/rim/rebounding) and mildly nudged
+  by chemistry, balance, and capped usage overload, so a team that fits
+  punches a little above its rating. When the AI judge ran, its capped
+  adjustments (section 6b) shift these a few points.
 - Games: quarter-by-quarter scores around a league baseline (~111) with home advantage and
   overtime, full box scores apportioned so lines sum exactly to team totals, star-of-game.
 - Form nights (v2): elite scorers catch fire on ~7% of nights (role players ~2%) with a
@@ -223,7 +229,11 @@ Pure TS on a seeded PRNG - a seed fully determines every game, so results replay
 - Seasons: double round-robin, standings with streaks and point-diff tiebreaks, season MVP.
 - Playoffs: bracket seeded by standings (season format) or team power (straight playoffs),
   8/4/2 bracket by league size, game-by-game stepping, Finals MVP, champion.
-- Sanity: a much stronger team wins >75% across 300 alternating-venue sims (tested).
+- Calibration (user-confirmed targets, pinned by calibration.test.ts): the
+  all-time five beats a 90-average team ~92% of nights by double digits,
+  rolls an average team ~98%, and sweeps best-of-7s; a GREAT chase draft
+  (avg ~96) wins ~97.5% per game so 82-0 lands roughly 1 run in 10; the
+  chase slate drafts to explicit 77-86 OVR targets.
 
 ---
 
