@@ -1,5 +1,5 @@
 import type { Card } from '../types'
-import { evaluateTeam, usageOverload } from './evaluate'
+import { blendedTalent, evaluateTeam, usageOverload } from './evaluate'
 import { ALL_SLOTS, STARTER_SLOTS, type Roster } from './lineup'
 import { mulberry32, randNormal, type Rng } from './prng'
 
@@ -36,23 +36,30 @@ function weightedAttrAvg(roster: Roster, key: keyof Card['attrs']): number {
   return weights === 0 ? 0 : sum / weights
 }
 
-// Distills a roster into the numbers the game sim runs on. Chemistry and
-// balance (from the evaluation engine) nudge offense/defense so "best
-// fitting" teams genuinely win more - the algorithm the game is built on.
+// Distills a roster into the numbers the game sim runs on. Star-weighted
+// talent (OVR) drives BOTH ends of the floor - the best players genuinely
+// win (user-confirmed: talent rules). Attribute shape decides the style,
+// and chemistry/balance/usage apply a mild finishing tax so a team that
+// actually fits punches a little above its rating.
+const TALENT_WEIGHT = 0.15
+
 export function simProfile(teamId: string, roster: Roster, positionless = false): TeamSimProfile {
   const evaluation = evaluateTeam(roster, positionless)
+  const talent = TALENT_WEIGHT * (blendedTalent(roster) - 80)
 
   let offense =
     0.52 * weightedAttrAvg(roster, 'sc') +
     0.22 * weightedAttrAvg(roster, 'sh') +
-    0.26 * weightedAttrAvg(roster, 'pm')
+    0.26 * weightedAttrAvg(roster, 'pm') +
+    talent
   let defense =
     0.5 * weightedAttrAvg(roster, 'df') +
     0.28 * weightedAttrAvg(roster, 'rm') +
-    0.22 * weightedAttrAvg(roster, 'rb')
+    0.22 * weightedAttrAvg(roster, 'rb') +
+    talent
 
-  offense += (evaluation.chemistry - 50) * 0.07 - usageOverload(roster) * 0.35
-  defense += (evaluation.balance - 50) * 0.07
+  offense += (evaluation.chemistry - 50) * 0.04 - Math.min(6, usageOverload(roster) * 0.22)
+  defense += (evaluation.balance - 50) * 0.04
 
   const players: SimPlayer[] = []
   for (const slot of ALL_SLOTS) {

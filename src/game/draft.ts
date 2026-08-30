@@ -413,13 +413,14 @@ export function advanceCpuTurns(state: DraftState, ctx: DraftCtx): DraftState {
 }
 
 // Instantly drafts a full legal team from the leftover pool (used to
-// generate opposition: league fillers and chase-mode opponents). Strength
-// scales with `bias`: 0 = wide-open sampling, 1 = best-available.
+// generate opposition: league fillers and chase-mode opponents). Drafts
+// toward `targetOvr`, so opposition strength is a real dial instead of an
+// accident of pool depth - the 82-0 slate is calibrated with this.
 export function draftFillerTeam(
   drafted: Set<string>,
   ctx: DraftCtx,
   teamSeed: number,
-  bias = 0.6,
+  targetOvr = 85,
 ): { roster: Roster; draftedPids: string[] } {
   const rng = mulberry32(teamSeed)
   const roster = emptyRoster()
@@ -433,10 +434,15 @@ export function draftFillerTeam(
     const constrain = openStarters.length >= picksLeft
     let pool = ctx.pool.filter((c) => !drafted.has(c.pid) && !newPids.includes(c.pid))
     if (constrain) pool = pool.filter(fillsOpen)
-    const ranked = bestSeasonPerPerson(pool).sort((a, b) => (betterSeason(a, b) ? -1 : 1))
-    // Sample near the top of the board; higher bias = tighter window.
-    const window = Math.max(4, Math.round(ranked.length * (1 - bias) * 0.25))
-    const card = ranked[Math.floor(rng() * Math.min(window, ranked.length))]
+    const people = bestSeasonPerPerson(pool)
+    // Everyone within a tight band of the target; widen until enough
+    // candidates exist so late rounds and thin pools never strand.
+    let candidates: Card[] = []
+    for (let window = 2; candidates.length < 8 && window <= 40; window += 2) {
+      candidates = people.filter((c) => Math.abs(c.ovr - targetOvr) <= window)
+    }
+    if (candidates.length === 0) candidates = people
+    const card = candidates[Math.floor(rng() * candidates.length)]
     const slot = autoPlace(roster, card, constrain)
     roster[slot] = card
     newPids.push(card.pid)

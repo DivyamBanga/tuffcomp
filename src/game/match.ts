@@ -35,6 +35,13 @@ export type MatchFormat = 'season' | 'series' | 'chase'
 export const CHASE_GAMES = 82
 const CHASE_OPPONENTS = 14
 
+// The 82-0 slate: a spread of opponent target OVRs, a couple of scary
+// teams down to solid ones, calibrated so a GREAT draft goes perfect
+// roughly 1 run in 10 (user-confirmed difficulty).
+const CHASE_SLATE_TARGETS = [86, 85, 84, 83, 83, 82, 82, 81, 81, 80, 80, 79, 78, 77]
+// Friends-league pad teams: respectable, below a well-drafted squad.
+const LEAGUE_FILLER_TARGET = 85
+
 export interface MatchConfig {
   mode: DraftMode
   format: MatchFormat
@@ -160,7 +167,8 @@ function finishDraft(state: MatchState, ctx: DraftCtx): MatchState {
   const names = shuffle(mulberry32(hashSeed(`${state.config.seed}:fillers`)), FILLER_NAMES)
   let fillerIndex = 0
   while (entries.length < targetSize) {
-    const filler = draftFillerTeam(drafted, ctx, hashSeed(`${state.config.seed}:filler:${fillerIndex}`), chase ? 0.8 : 0.6)
+    const target = chase ? CHASE_SLATE_TARGETS[fillerIndex % CHASE_SLATE_TARGETS.length] : LEAGUE_FILLER_TARGET
+    const filler = draftFillerTeam(drafted, ctx, hashSeed(`${state.config.seed}:filler:${fillerIndex}`), target)
     const id = `filler-${fillerIndex}`
     entries.push({ id, name: names[fillerIndex % names.length], isCpu: true, isFiller: true })
     rosters[id] = filler.roster

@@ -142,22 +142,26 @@ describe('CPU turns', () => {
 })
 
 describe('draftFillerTeam', () => {
-  it('builds legal opposition that avoids all drafted persons, stronger at higher bias', () => {
+  it('builds legal opposition near its target strength, avoiding drafted persons', () => {
     const state = playOut(positionalDraft(55))
     const drafted = new Set(state.draftedPids)
-    const filler = draftFillerTeam(drafted, ctx, 777, 0.6)
+    const filler = draftFillerTeam(drafted, ctx, 777, 85)
     const cards = rosterCards(filler.roster)
     expect(cards.length).toBe(ROUNDS)
     expect(canFieldStarters(cards)).toBe(true)
     for (const card of cards) expect(drafted.has(card.pid)).toBe(false)
 
-    const avg = (seed: number, bias: number) => {
-      const team = draftFillerTeam(new Set<string>(), ctx, seed, bias)
+    const avg = (seed: number, target: number) => {
+      const team = draftFillerTeam(new Set<string>(), ctx, seed, target)
       const cs = rosterCards(team.roster)
       return cs.reduce((s, c) => s + c.ovr, 0) / cs.length
     }
-    const strong = Array.from({ length: 6 }, (_, i) => avg(i, 0.85)).reduce((a, b) => a + b, 0) / 6
-    const loose = Array.from({ length: 6 }, (_, i) => avg(i, 0.2)).reduce((a, b) => a + b, 0) / 6
-    expect(strong).toBeGreaterThan(loose)
+    // The target is a real dial: teams land close to it, and higher
+    // targets mean genuinely stronger opposition.
+    for (const target of [78, 85, 92]) {
+      const built = Array.from({ length: 4 }, (_, i) => avg(i, target)).reduce((a, b) => a + b, 0) / 4
+      expect(Math.abs(built - target)).toBeLessThan(3)
+    }
+    expect(avg(1, 92)).toBeGreaterThan(avg(1, 78))
   })
 })

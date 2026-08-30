@@ -31,7 +31,10 @@ const BENCH_WEIGHT = 0.35
 // Starters are weighted by rank, and 95+ seasons earn a premium.
 const STAR_WEIGHTS = [0.3, 0.24, 0.19, 0.15, 0.12]
 
-function computeQuality(roster: Roster): number {
+// Star-weighted roster talent in OVR units (bench blended in light). This
+// is THE number that decides games: the sim feeds it into both ends of
+// the floor, so the best players genuinely win.
+export function blendedTalent(roster: Roster): number {
   const cards = rosterCards(roster)
   if (cards.length === 0) return 0
 
@@ -51,9 +54,15 @@ function computeQuality(roster: Roster): number {
   const benchOvrs = cards.filter((c) => !starterSet.has(c.id)).map((c) => c.ovr)
   const benchAvg = benchOvrs.length > 0 ? benchOvrs.reduce((a, b) => a + b, 0) / benchOvrs.length : starterAvg - 12
 
-  const blended = starterAvg * (1 - BENCH_WEIGHT * 0.5) + benchAvg * (BENCH_WEIGHT * 0.5)
+  return starterAvg * (1 - BENCH_WEIGHT * 0.5) + benchAvg * (BENCH_WEIGHT * 0.5)
+}
+
+function computeQuality(roster: Roster): number {
+  const cards = rosterCards(roster)
+  if (cards.length === 0) return 0
+  const starterOvrs = starters(roster).map((c) => c.ovr)
   const premium = starterOvrs.filter((ovr) => ovr >= 95).length * 1.5
-  return clamp(Math.round(((blended - 50) / 49) * 100 + premium), 0, 100)
+  return clamp(Math.round(((blendedTalent(roster) - 50) / 49) * 100 + premium), 0, 100)
 }
 
 // ---------------------------------------------------------------------- fit
@@ -136,12 +145,15 @@ export function needScores(roster: Roster): NeedScore[] {
 const GAP_THRESHOLD = 40
 
 // "There's only one ball": five 30%-usage stars can't all eat. League-average
-// five-man usage sums to ~100; past 115 the offense starts stepping on itself.
+// five-man usage sums to ~100; past 120 the offense starts stepping on
+// itself. A MILD tax by design (user-confirmed): talent rules, and five
+// legends always outgun five good players - they just leave a little on
+// the table.
 export function usageOverload(roster: Roster): number {
   const cards = starters(roster)
   if (cards.length < 5) return 0
   const totalUsage = cards.reduce((sum, c) => sum + c.usg, 0)
-  return Math.max(0, Math.round((totalUsage - 115) * 1.2))
+  return Math.min(25, Math.max(0, Math.round((totalUsage - 120) * 0.6)))
 }
 
 function computeBalance(roster: Roster): number {
@@ -194,7 +206,9 @@ function summarize(evaluation: Omit<TeamEvaluation, 'summary'>, roster: Roster):
 
 // --------------------------------------------------------------------- main
 
-export const POWER_WEIGHTS = { quality: 0.4, fit: 0.15, chemistry: 0.15, balance: 0.3 }
+// Talent rules (user-confirmed): quality carries the power score; fit,
+// chemistry, and balance refine it rather than override it.
+export const POWER_WEIGHTS = { quality: 0.6, fit: 0.1, chemistry: 0.1, balance: 0.2 }
 
 export function evaluateTeam(roster: Roster, positionless = false): TeamEvaluation {
   const quality = computeQuality(roster)
