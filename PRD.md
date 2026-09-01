@@ -180,6 +180,24 @@ CPUs call names like humans and never whiff.
 
 Franchise Spins was removed in v2 (recoverable in git history).
 
+PARTY MODES (v4.2, 2026-09-01, user-confirmed): two friends-room drafts in
+`src/game/party.ts`, both 5-man squads under the room's theme (chosen or
+random), no filler teams - every seat is a franchise:
+- DOLLAR TABLE: the viral $15 challenge. Five seeded price shelves ($5
+  elites by in-theme rank down to $1 glue guys, position-covered, sized to
+  the room), snake draft, every pick checked for budget AND completability
+  (backtracking solver); a stranded drafter gets a cheapest-fit bailout.
+- AUCTION: $50 a team. Deterministic smart reveals (weighted toward the
+  room's open positions, star power paced in bands), $1 opens, $1 minimum
+  raises with jump bids, binding passes (all-passed = instant hammer), max
+  bid always reserves $1 per open slot, host-clock GOING ONCE / GOING
+  TWICE / SOLD ladder (12s/5s/4s/4s) that resets on every bid, unwanted
+  lots walk, and an endgame safety net auto-fills any unfinished five from
+  the theme pool so tip-off always happens.
+- Bots play both modes (value-priced bidding, feasible best-talent picks).
+  Positionless themes work in both. After the draft: the normal preview,
+  scout, and season/playoff sim.
+
 Placement: natural open starter slot first, else bench (or stretch when starters must fill).
 Rearrange freely anytime pre-tipoff via tap-two-slots-to-swap. Position legality: natural at
 your position(s), neighbor positions at a stretch discount, two apart illegal (no centers at

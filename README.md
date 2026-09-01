@@ -28,6 +28,21 @@ setup, snake draft head to head while everyone watches the live keystrokes
 of whoever is on the clock, then a season with playoffs or straight
 best-of-7s. No accounts, no server, peer to peer.
 
+## Party modes
+
+Two more ways to draft with friends, both 5-man squads under the theme:
+
+- Dollar table: the classic $15 challenge. Five price shelves, $5 legends
+  down to $1 glue guys, snake draft, spend your $15 without stranding your
+  team. The game checks every pick so nobody softlocks.
+- Auction: $50 a team. Players hit the block one at a time, smartly picked
+  around what the room still needs. $1 opens it, raises from anyone,
+  passes are binding, and the host's clock calls going once, going twice,
+  sold. Winner pays, player lands in the best spot.
+
+The host picks the mode in room setup. Party leagues are just the room,
+no filler teams, and the winner still gets the full season or playoff sim.
+
 An AI scout (Claude, effort high) reads every roster, the theme, the real
 duos and the usage load before tip-off, and nudges the sim within hard
 caps so it can never break fairness. It scouts the chase too, all 15
@@ -69,10 +84,12 @@ npm run data:generate
 - PeerJS WebRTC for online rooms, no backend anywhere
 - Claude scout behind a one file Cloudflare Worker (worker/), key held as a
   Worker secret, never in the bundle
-- 110 tests with Vitest, deployed free on GitHub Pages
+- 134 tests with Vitest, deployed free on GitHub Pages
 
 ## Status
 
 v4 is live: all of NBA history, 2K style ratings, 60+ themes with a
 picker, unlimited blind typing, positionless drafts, live keystrokes in
-rooms, and a sharper scout. See PRD.md for the full design.
+rooms, a talent-first sim where the best team actually wins, and party
+modes (the $15 dollar table and the $50 auction). See PRD.md for the
+full design.
