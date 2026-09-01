@@ -3,6 +3,7 @@ import { useGame } from './game/store'
 import { ChampionScreen, PlayoffsScreen, SeasonScreen, TrophiesScreen } from './ui/CompetitionScreens'
 import { DraftScreen } from './ui/DraftScreen'
 import { HomeScreen, JoinScreen, LobbyScreen, ScoutScreen, SetupScreen, ThemePickScreen } from './ui/MenuScreens'
+import { PartyDraftScreen } from './ui/PartyScreens'
 import { PreviewScreen } from './ui/PreviewScreen'
 
 // The hidden #scout page (arming the AI scout) rides the URL hash.
@@ -19,7 +20,7 @@ function GameRouter() {
   if (!match) return <HomeScreen />
   switch (match.phase) {
     case 'draft':
-      return <DraftScreen match={match} />
+      return match.party ? <PartyDraftScreen match={match} /> : <DraftScreen match={match} />
     case 'preview':
       return <PreviewScreen match={match} />
     case 'season':

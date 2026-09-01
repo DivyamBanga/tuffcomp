@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { eligibleThemes, KIND_LABELS, KIND_ORDER, themeById } from '../game/themes'
 import { ROUNDS } from '../game/draft'
+import { PARTY_ROSTER_SIZE } from '../game/party'
 import { useGame } from '../game/store'
 import { normalizeRoomCode } from '../net/protocol'
 import { Btn, RingSeal, Sheet, StatusLine } from './components'
@@ -92,13 +93,15 @@ export function ThemeMenu({
   playerCount,
   selected,
   onPick,
+  rounds = ROUNDS,
 }: {
   playerCount: number
   selected: string | null
   onPick: (id: string) => void
+  rounds?: number
 }) {
   const pool = useGame((s) => s.pool)
-  const themes = useMemo(() => (pool ? eligibleThemes(pool, playerCount, ROUNDS) : []), [pool, playerCount])
+  const themes = useMemo(() => (pool ? eligibleThemes(pool, playerCount, rounds) : []), [pool, playerCount, rounds])
 
   if (!pool) return <p className="plate animate-pulse py-8 text-center !text-[10px]">DEALING THE POOL…</p>
 
@@ -230,11 +233,18 @@ export function ScoutScreen() {
 
 // ------------------------------------------------------------------- setup
 
+const DRAFT_MODES: { mode: 'themes' | 'budget' | 'auction'; label: string; hint: string }[] = [
+  { mode: 'themes', label: 'THEME TYPING', hint: 'Name your 8 from memory.' },
+  { mode: 'budget', label: 'DOLLAR TABLE', hint: '$15, five shelves, build your five.' },
+  { mode: 'auction', label: 'AUCTION', hint: '$50, live bidding, the hammer decides.' },
+]
+
 export function SetupScreen() {
   const { config, setConfig, createRoom, goHome, netStatus, netError } = useGame()
   const sizes = config.format === 'series' ? [2, 4, 8] : [4, 6, 8]
   const [browsing, setBrowsing] = useState(false)
   const chosenTheme = config.theme ?? null
+  const party = config.mode !== 'themes'
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-2xl flex-col justify-center gap-4 px-4 py-10">
@@ -255,14 +265,32 @@ export function SetupScreen() {
             onClick={() => setConfig({ format: 'series', leagueSize: [2, 4, 8].includes(config.leagueSize) ? config.leagueSize : 4 })}
           />
         </div>
-        <div className="cell flex flex-wrap items-center gap-3 border-t border-line">
-          <span className="plate !text-[9px]">TEAMS</span>
-          {sizes.map((n) => (
-            <Btn key={n} on={config.leagueSize === n} onClick={() => setConfig({ leagueSize: n })} className="!px-3.5 !py-1.5">
-              {n}
-            </Btn>
-          ))}
+        <div className="cell border-t border-line">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="plate !text-[9px]">DRAFT</span>
+            {DRAFT_MODES.map((m) => (
+              <Btn key={m.mode} on={config.mode === m.mode} onClick={() => setConfig({ mode: m.mode })} className="!px-3.5 !py-1.5">
+                {m.label}
+              </Btn>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[11px] text-faint">{DRAFT_MODES.find((m) => m.mode === config.mode)?.hint}</p>
         </div>
+        {!party && (
+          <div className="cell flex flex-wrap items-center gap-3 border-t border-line">
+            <span className="plate !text-[9px]">TEAMS</span>
+            {sizes.map((n) => (
+              <Btn key={n} on={config.leagueSize === n} onClick={() => setConfig({ leagueSize: n })} className="!px-3.5 !py-1.5">
+                {n}
+              </Btn>
+            ))}
+          </div>
+        )}
+        {party && (
+          <div className="cell border-t border-line">
+            <p className="plate plate-faint !text-[8.5px]">EVERY SEAT IN THE ROOM IS A TEAM · 5-MAN SQUADS · NO FILLERS</p>
+          </div>
+        )}
         <div className="cell border-t border-line">
           <div className="flex flex-wrap items-center gap-3">
             <span className="plate !text-[9px]">THEME</span>
@@ -276,7 +304,8 @@ export function SetupScreen() {
           {browsing && (
             <div className="mt-3 border-t border-line pt-3">
               <ThemeMenu
-                playerCount={config.leagueSize}
+                playerCount={party ? 8 : config.leagueSize}
+                rounds={party ? PARTY_ROSTER_SIZE : ROUNDS}
                 selected={chosenTheme}
                 onPick={(id) => {
                   setConfig({ theme: id })
