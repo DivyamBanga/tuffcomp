@@ -60,6 +60,38 @@ let guestRoom: GuestRoom | null = null
 let autoSimTimer: number | null = null
 let typingLastSent = 0
 let typingTimer: number | null = null
+let auctionTimer: number | null = null
+let auctionSig = ''
+
+// The auctioneer's clock (host only): 12s for an unwanted lot to die,
+// then a 5s/4s/4s GOING ONCE / GOING TWICE / SOLD ladder. Any state
+// change (bid, pass, new lot) re-arms it.
+function armAuctionClock(get: () => GameStore) {
+  const { sessionMode, match } = get()
+  const party = match?.party
+  const live =
+    sessionMode === 'host' &&
+    match?.phase === 'draft' &&
+    party?.kind === 'auction' &&
+    !party.done &&
+    party.lot !== null
+  if (!live) {
+    if (auctionTimer !== null) window.clearTimeout(auctionTimer)
+    auctionTimer = null
+    auctionSig = ''
+    return
+  }
+  const lot = party.lot!
+  const sig = `${party.lotIndex}:${lot.price}:${lot.leaderId}:${lot.stage}:${lot.passed.length}`
+  if (sig === auctionSig && auctionTimer !== null) return
+  auctionSig = sig
+  if (auctionTimer !== null) window.clearTimeout(auctionTimer)
+  const delay = lot.leaderId === null ? 12000 : lot.stage === 'open' ? 5000 : 4000
+  auctionTimer = window.setTimeout(() => {
+    auctionTimer = null
+    hostRoom?.dispatchFrom(get().myId, { type: 'AUCTION_TICK' })
+  }, delay)
+}
 
 async function ensurePool(get: () => GameStore, set: (partial: Partial<GameStore>) => void): Promise<Card[]> {
   const existing = get().pool
@@ -82,6 +114,9 @@ function teardownNet() {
   guestRoom?.destroy()
   hostRoom = null
   guestRoom = null
+  if (auctionTimer !== null) window.clearTimeout(auctionTimer)
+  auctionTimer = null
+  auctionSig = ''
 }
 
 export const useGame = create<GameStore>((set, get) => {
@@ -105,6 +140,7 @@ export const useGame = create<GameStore>((set, get) => {
   const applySnapshot = (lobby: LobbySnapshot, match: MatchState | null) => {
     // A snapshot means something happened - any live-typing ghost is stale.
     set({ lobby, match, netStatus: 'connected', screen: match ? 'game' : 'lobby', liveTyping: null })
+    armAuctionClock(get)
     maybeRecordTrophy(match)
   }
 

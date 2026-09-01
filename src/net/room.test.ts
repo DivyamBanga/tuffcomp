@@ -260,3 +260,51 @@ describe('host + guests over the fake wire', () => {
     room.host.destroy()
   })
 })
+
+describe('auction party over the fake wire', () => {
+  it('guests bid, spoofs and guest hammers are rejected, host clock sells', () => {
+    const factory = makeFakeNetwork()
+    let hostMatch: MatchState | null = null
+    const host = new HostRoom(
+      factory,
+      'TEST',
+      { playerId: 'host-1', name: 'Div' },
+      { mode: 'auction', format: 'series', leagueSize: 2, seed: 12, theme: 'era-90s' },
+      ctx,
+      {
+        onSnapshot: (_l, m) => {
+          hostMatch = m
+        },
+        onError: () => {},
+      },
+    )
+    const g1 = joinRoom(factory, 'guest-1', 'Jay')
+    host.startMatch()
+    const match = () => hostMatch!
+    expect(match().party!.kind).toBe('auction')
+    const lot = () => (match().party as { lot: { price: number; leaderId: string | null; cardId: string } | null }).lot
+
+    // Guest opens the bidding for $7.
+    g1.guest.sendAction({ type: 'PARTY', action: { type: 'AUCTION_BID', playerId: 'guest-1', amount: 7 } })
+    expect(lot()!.price).toBe(7)
+    expect(lot()!.leaderId).toBe('guest-1')
+
+    // Guest can't bid AS the host (sender mismatch) or swing the hammer.
+    g1.guest.sendAction({ type: 'PARTY', action: { type: 'AUCTION_BID', playerId: 'host-1', amount: 9 } })
+    expect(lot()!.leaderId).toBe('guest-1')
+    g1.guest.sendAction({ type: 'AUCTION_TICK' })
+    expect(lot()!.price).toBe(7)
+
+    // Host outbids, then the host clock hammers it down in three ticks.
+    const soldCard = lot()!.cardId
+    host.dispatchFrom('host-1', { type: 'PARTY', action: { type: 'AUCTION_BID', playerId: 'host-1', amount: 8 } })
+    host.dispatchFrom('host-1', { type: 'AUCTION_TICK' })
+    host.dispatchFrom('host-1', { type: 'AUCTION_TICK' })
+    host.dispatchFrom('host-1', { type: 'AUCTION_TICK' })
+    const hostRoster = match().party!.teams['host-1'].roster
+    expect(Object.values(hostRoster).some((c) => c?.id === soldCard)).toBe(true)
+    expect(match().party!.teams['host-1'].budget).toBe(42)
+    expect(g1.match()!.party!.teams['host-1'].budget).toBe(42) // guest sees it too
+    host.destroy()
+  })
+})

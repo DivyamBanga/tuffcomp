@@ -451,17 +451,22 @@ function revealNext(state: AuctionState, ctx: DraftCtx): AuctionState {
 
 // Auction over (or safety cap hit): any unfinished team auto-fills its
 // open slots with the best remaining fits at $1 a head, so every game
-// always reaches tip-off.
+// always reaches tip-off. Falls back past the drained reveal pool to the
+// whole theme pool (discarded lots included - nobody owns them).
 function finishAuction(state: AuctionState, ctx: DraftCtx): AuctionState {
   let current: AuctionState = { ...state, lot: null, done: true }
+  const rostered = new Set(
+    current.players.flatMap((p) => STARTER_SLOTS.map((s) => current.teams[p.id].roster[s]?.pid)).filter(Boolean),
+  )
+  const reserves = bestPeople(ctx.pool, current.theme!).filter((c) => !rostered.has(c.pid))
   for (const player of current.players) {
     let team = current.teams[player.id]
     while (!teamFull(team)) {
-      const pick = current.pool
-        .map((id) => cardById(ctx, id))
-        .filter((card) => hasOpenFor(current, team, card))
+      const pick = reserves
+        .filter((card) => !rostered.has(card.pid) && hasOpenFor(current, team, card))
         .sort((a, b) => b.ovr - a.ovr)[0]
       if (!pick) break
+      rostered.add(pick.pid)
       current = place(current, player.id, pick, Math.min(1, team.budget)) as AuctionState
       current = { ...current, pool: current.pool.filter((id) => id !== pick.id) }
       team = current.teams[player.id]

@@ -130,6 +130,89 @@ describe('positionless chase (7-footers only)', () => {
   })
 })
 
+describe('party modes end to end', () => {
+  it('a dollar-table party runs draft -> preview -> season -> champion with 5-man teams', async () => {
+    const { feasibleBudgetPicks, budgetTurnId } = await import('./party')
+    const players: DraftPlayer[] = [
+      { id: 'p1', name: 'Div', isCpu: false },
+      { id: 'p2', name: 'Jay', isCpu: false },
+      { id: 'bot', name: 'BOT A', isCpu: true },
+    ]
+    let state = initMatch({ mode: 'budget', format: 'season', leagueSize: 4, seed: 21, theme: 'era-90s' }, players, ctx)
+    expect(state.phase).toBe('draft')
+    expect(state.party!.kind).toBe('budget')
+
+    let guard = 0
+    while (state.phase === 'draft' && guard++ < 30) {
+      const party = state.party!
+      if (party.kind !== 'budget') throw new Error('unexpected')
+      const turn = budgetTurnId(party)!
+      const pick = feasibleBudgetPicks(party, ctx, turn).sort((a, b) => b.card.ovr - a.card.ovr)[0]
+      state = applyMatchAction(state, { type: 'PARTY', action: { type: 'BUDGET_PICK', playerId: turn, cardId: pick.card.id } }, ctx)
+    }
+    expect(state.phase).toBe('preview')
+    // The room IS the league: three teams, no fillers.
+    expect(state.entries.length).toBe(3)
+    expect(state.entries.every((e) => !e.isFiller)).toBe(true)
+    for (const p of players) {
+      for (const slot of STARTER_SLOTS) expect(state.rosters[p.id][slot]).not.toBeNull()
+      expect(state.rosters[p.id].B1).toBeNull()
+    }
+
+    // 5-man teams sim clean all the way to a ring.
+    state = applyMatchAction(state, { type: 'BEGIN_COMPETITION' }, ctx)
+    expect(state.phase).toBe('season')
+    state = simToEnd(state)
+    expect(state.championId).not.toBeNull()
+    const finalGame = state.playoffRounds.at(-1)!.matchups[0].games[0]
+    expect(finalGame.home.box.length).toBe(5)
+    expect(finalGame.home.box.reduce((s, l) => s + l.pts, 0)).toBe(finalGame.home.score)
+  })
+
+  it('an auction party reaches preview via bids and the hammer', () => {
+    const players: DraftPlayer[] = [
+      { id: 'p1', name: 'Div', isCpu: false },
+      { id: 'bot1', name: 'BOT A', isCpu: true },
+      { id: 'bot2', name: 'BOT B', isCpu: true },
+    ]
+    let state = initMatch({ mode: 'auction', format: 'series', leagueSize: 2, seed: 33, theme: 'era-10s' }, players, ctx)
+    expect(state.party!.kind).toBe('auction')
+
+    let guard = 0
+    while (state.phase === 'draft' && guard++ < 500) {
+      const party = state.party!
+      if (party.kind !== 'auction' || !party.lot) break
+      // The human passes everything; bots and the clock do the rest.
+      const passed = applyMatchAction(state, { type: 'PARTY', action: { type: 'AUCTION_PASS', playerId: 'p1' } }, ctx)
+      state = passed !== state ? passed : applyMatchAction(state, { type: 'AUCTION_TICK' }, ctx)
+    }
+    expect(state.phase).toBe('preview')
+    // The human's team was auto-filled by the safety net; bots bought theirs.
+    for (const p of players) {
+      for (const slot of STARTER_SLOTS) expect(state.rosters[p.id][slot], `${p.id} ${slot}`).not.toBeNull()
+    }
+  })
+
+  it('preview MOVE cannot stash a 5-man starter on the empty bench', async () => {
+    const { feasibleBudgetPicks, budgetTurnId } = await import('./party')
+    const players: DraftPlayer[] = [
+      { id: 'p1', name: 'Div', isCpu: false },
+      { id: 'bot', name: 'BOT A', isCpu: true },
+    ]
+    let state = initMatch({ mode: 'budget', format: 'series', leagueSize: 2, seed: 5, theme: 'era-00s' }, players, ctx)
+    let guard = 0
+    while (state.phase === 'draft' && guard++ < 20) {
+      const party = state.party!
+      if (party.kind !== 'budget') throw new Error('unexpected')
+      const turn = budgetTurnId(party)!
+      const pick = feasibleBudgetPicks(party, ctx, turn)[0]
+      state = applyMatchAction(state, { type: 'PARTY', action: { type: 'BUDGET_PICK', playerId: turn, cardId: pick.card.id } }, ctx)
+    }
+    expect(state.phase).toBe('preview')
+    expect(applyMatchAction(state, { type: 'MOVE_AFTER_DRAFT', playerId: 'p1', from: 'PG', to: 'B1' }, ctx)).toBe(state)
+  })
+})
+
 describe('preview-phase lineup moves', () => {
   it('lets a player legally rearrange and rejects illegal moves', () => {
     let state = initMatch({ mode: 'themes', format: 'series', leagueSize: 2, seed: 15, theme: 'era-90s' }, SOLO, ctx)

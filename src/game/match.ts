@@ -1,6 +1,6 @@
 import type { Card } from '../types'
 import { evaluateTeam } from '../engine/evaluate'
-import { canPlaySlot, rosterCards, type Roster, type SlotId } from '../engine/lineup'
+import { BENCH_SLOTS, canPlaySlot, rosterCards, TEAM_SIZE, type Roster, type SlotId } from '../engine/lineup'
 import { hashSeed, mulberry32, shuffle } from '../engine/prng'
 import { simGame, simProfile, type GameResult, type TeamSimProfile } from '../engine/sim'
 import { judgeAdjustments, type LeagueJudgment } from '../llm/judge'
@@ -24,6 +24,16 @@ import {
   type AwardWinner,
   type SeasonState,
 } from '../engine/season'
+import {
+  advancePartyCpu,
+  applyAuctionTick,
+  applyParty,
+  initAuction,
+  initBudget,
+  partyRosters,
+  type PartyAction,
+  type PartyState,
+} from './party'
 
 // ----------------------------------------------------------------- config
 
@@ -78,6 +88,8 @@ export interface MatchState {
   entries: TeamEntry[]
   phase: MatchPhase
   draft: DraftState | null
+  // The party draft (dollar table or auction) when mode isn't 'themes'.
+  party: PartyState | null
   // Mirrors the draft's positionless flag for the phases after it: slot
   // legality and fit scoring go by skills instead of positions.
   positionless: boolean
@@ -94,6 +106,8 @@ export interface MatchState {
 
 export type MatchAction =
   | { type: 'DRAFT'; action: DraftAction }
+  | { type: 'PARTY'; action: PartyAction }
+  | { type: 'AUCTION_TICK' } // host clock only: the hammer coming down
   | { type: 'SET_JUDGE'; judgment: LeagueJudgment }
   | { type: 'BEGIN_COMPETITION' }
   | { type: 'SIM_NEXT' }
@@ -113,13 +127,10 @@ const FILLER_NAMES = [
 // ------------------------------------------------------------------ init
 
 export function initMatch(config: MatchConfig, players: DraftPlayer[], ctx: DraftCtx): MatchState {
-  const draft = advanceCpuTurns(initDraft(config.mode, players, config.seed, ctx, config.theme), ctx)
-  return {
+  const base = {
     config,
     entries: players.map((p) => ({ id: p.id, name: p.name, isCpu: p.isCpu, isFiller: false })),
-    phase: 'draft',
-    draft,
-    positionless: draft.positionless,
+    phase: 'draft' as MatchPhase,
     rosters: {},
     judge: null,
     season: null,
@@ -129,6 +140,14 @@ export function initMatch(config: MatchConfig, players: DraftPlayer[], ctx: Draf
     seasonMvp: null,
     finalsMvp: null,
   }
+  if (config.mode !== 'themes') {
+    const init = config.mode === 'budget' ? initBudget : initAuction
+    const party = advancePartyCpu(init(players, config.seed, ctx, config.theme), ctx)
+    const state: MatchState = { ...base, draft: null, party, positionless: party.positionless }
+    return party.done ? finishPartyDraft(state) : state
+  }
+  const draft = advanceCpuTurns(initDraft(config.mode, players, config.seed, ctx, config.theme), ctx)
+  return { ...base, draft, party: null, positionless: draft.positionless }
 }
 
 // --------------------------------------------------------------- helpers
@@ -177,6 +196,12 @@ function finishDraft(state: MatchState, ctx: DraftCtx): MatchState {
   }
 
   return { ...state, entries, rosters, phase: 'preview' }
+}
+
+// A finished party draft goes straight to the preview: the room's teams
+// ARE the league - no filler franchises pad a party night.
+function finishPartyDraft(state: MatchState): MatchState {
+  return { ...state, rosters: partyRosters(state.party!), phase: 'preview' }
 }
 
 // The chase schedule: 82 games, all involving the runner, cycling through
@@ -307,6 +332,21 @@ export function applyMatchAction(state: MatchState, action: MatchAction, ctx: Dr
     return draft.done ? finishDraft(next, ctx) : next
   }
 
+  // Party drafts: table picks, bids, passes - and the host's hammer.
+  if (action.type === 'PARTY' || action.type === 'AUCTION_TICK') {
+    if (state.phase !== 'draft' || !state.party) return state
+    let party =
+      action.type === 'PARTY'
+        ? applyParty(state.party, action.action, ctx)
+        : state.party.kind === 'auction'
+          ? applyAuctionTick(state.party, ctx)
+          : state.party
+    if (party === state.party) return state
+    party = advancePartyCpu(party, ctx)
+    const next = { ...state, party }
+    return party.done ? finishPartyDraft(next) : next
+  }
+
   // Rearranging your lineup between draft end and tip-off.
   if (action.type === 'MOVE_AFTER_DRAFT') {
     if (state.phase !== 'preview') return state
@@ -315,6 +355,14 @@ export function applyMatchAction(state: MatchState, action: MatchAction, ctx: Dr
     const fromCard = roster[action.from]
     const toCard = roster[action.to]
     if (!fromCard) return state
+    // A 5-man party team can't stash a starter on the empty bench.
+    if (
+      toCard === null &&
+      rosterCards(roster).length < TEAM_SIZE &&
+      (BENCH_SLOTS as readonly string[]).includes(action.to)
+    ) {
+      return state
+    }
     if (!state.positionless && !canPlaySlot(fromCard, action.to)) return state
     if (toCard && !state.positionless && !canPlaySlot(toCard, action.from)) return state
     const moved: Roster = { ...roster, [action.from]: toCard, [action.to]: fromCard }

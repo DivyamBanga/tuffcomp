@@ -109,8 +109,11 @@ export class HostRoom {
     switch (action.type) {
       case 'DRAFT':
         return action.action.playerId === senderId
+      case 'PARTY':
+        return action.action.playerId === senderId
       case 'MOVE_AFTER_DRAFT':
         return action.playerId === senderId
+      case 'AUCTION_TICK': // only the host's clock swings the hammer
       case 'SET_JUDGE':
       case 'BEGIN_COMPETITION':
       case 'SIM_NEXT':
