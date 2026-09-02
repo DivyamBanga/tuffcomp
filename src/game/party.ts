@@ -11,6 +11,7 @@ import {
 import { hashSeed, mulberry32, shuffle } from '../engine/prng'
 import { pickDraftTheme, themeById, themeNeedsPositionless } from './themes'
 import type { DraftCtx, DraftPlayer } from './draft'
+import { CLUES_MAX, CLUES_TO_OPEN, crowdValue, pickClues, type Clue } from './clues'
 
 // ------------------------------------------------------------ party modes
 //
@@ -72,19 +73,26 @@ export interface BudgetState extends PartyBase {
 export type LotStage = 'open' | 'once' | 'twice'
 
 export interface AuctionLot {
-  cardId: string
+  cardId: string // '' on a guest's copy of an open MYSTERY lot (redacted)
   price: number // current high bid; 0 = no bids yet
   leaderId: string | null
   stage: LotStage
   passed: string[]
+  // MYSTERY only: the lot's clue texts and how many are revealed so far.
+  clues?: string[]
+  shown?: number
 }
 
 export interface AuctionState extends PartyBase {
   kind: 'auction'
-  pool: string[] // curated revealable card ids, still available
+  // MYSTERY AUCTION: clues instead of a face, the whole theme pool can
+  // hit the block (stars weighted), reveal at the hammer.
+  mystery: boolean
+  pool: string[] // curated revealable card ids, still available (normal auction)
+  dealt: string[] // card ids already put on the block (mystery)
   lot: AuctionLot | null
   lotIndex: number
-  lastResult: { name: string; price: number; winnerName: string | null } | null
+  lastResult: { cardId: string; name: string; price: number; winnerName: string | null } | null
 }
 
 export type PartyState = BudgetState | AuctionState
@@ -157,12 +165,19 @@ function canFill(positionless: boolean, card: Card, slot: SlotId): boolean {
   return positionless || canPlaySlot(card, slot)
 }
 
+// A mystery bidder can't see the position, so any open slot is fair game.
+const isMystery = (state: PartyState) => state.kind === 'auction' && state.mystery
+
 function hasOpenFor(state: PartyState, team: PartyTeamState, card: Card): boolean {
-  return openSlots(team.roster).some((slot) => canFill(state.positionless, card, slot))
+  const open = openSlots(team.roster)
+  if (isMystery(state)) return open.length > 0
+  return open.some((slot) => canFill(state.positionless, card, slot))
 }
 
 // Where a bought player lands: chosen open legal slot, else the most
-// natural open slot (skill roles when positionless).
+// natural open slot (skill roles when positionless). A mystery winner
+// with no legal spot left plays the best-fitting open role - out of
+// position, but that's the gamble you took.
 function landingSlot(state: PartyState, team: PartyTeamState, card: Card, chosen?: SlotId): SlotId {
   const open = openSlots(team.roster)
   if (chosen && open.includes(chosen) && canFill(state.positionless, card, chosen)) return chosen
@@ -173,6 +188,9 @@ function landingSlot(state: PartyState, team: PartyTeamState, card: Card, chosen
   if (naturals.length > 0) return naturals[0]
   const legal = open.filter((slot) => canPlaySlot(card, slot))
   if (legal.length > 0) return legal[0]
+  if (isMystery(state) && open.length > 0) {
+    return open.reduce((best, slot) => (roleFit(card, slot) > roleFit(card, best) ? slot : best))
+  }
   throw new Error('no open slot')
 }
 
@@ -359,12 +377,19 @@ export function buildAuctionPool(people: Card[], playerCount: number): string[] 
     .map((c) => c.id)
 }
 
-export function initAuction(players: DraftPlayer[], seed: number, ctx: DraftCtx, chosenTheme?: string | null): AuctionState {
+export function initAuction(
+  players: DraftPlayer[],
+  seed: number,
+  ctx: DraftCtx,
+  chosenTheme?: string | null,
+  mystery = false,
+): AuctionState {
   const theme = pickDraftTheme(ctx.pool, players.length, seed, PARTY_ROSTER_SIZE, chosenTheme)
   const positionless = themeNeedsPositionless(themeById(theme), ctx.pool, players.length)
   const people = bestPeople(ctx.pool, theme)
   const base: AuctionState = {
     kind: 'auction',
+    mystery,
     players,
     teams: Object.fromEntries(
       players.map((p) => [p.id, { playerId: p.id, roster: emptyRoster(), budget: AUCTION_START }]),
@@ -372,7 +397,8 @@ export function initAuction(players: DraftPlayer[], seed: number, ctx: DraftCtx,
     theme,
     positionless,
     seed,
-    pool: buildAuctionPool(people, players.length),
+    pool: mystery ? [] : buildAuctionPool(people, players.length),
+    dealt: [],
     lot: null,
     lotIndex: 0,
     lastPick: null,
@@ -380,6 +406,40 @@ export function initAuction(players: DraftPlayer[], seed: number, ctx: DraftCtx,
     done: false,
   }
   return revealNext(base, ctx)
+}
+
+// Everyone in the theme who could still hit a mystery block: not dealt
+// yet, not on anyone's team. Also the honest universe for the
+// anti-giveaway check and the bots' crowd value.
+const peopleCache = new WeakMap<Card[], Map<string, Card[]>>()
+function themePeople(ctx: DraftCtx, theme: string): Card[] {
+  let byTheme = peopleCache.get(ctx.pool)
+  if (!byTheme) {
+    byTheme = new Map()
+    peopleCache.set(ctx.pool, byTheme)
+  }
+  let people = byTheme.get(theme)
+  if (!people) {
+    people = bestPeople(ctx.pool, theme)
+    byTheme.set(theme, people)
+  }
+  return people
+}
+
+export function mysteryPeople(state: AuctionState, ctx: DraftCtx): Card[] {
+  const dealt = new Set(state.dealt)
+  const rostered = new Set(
+    state.players.flatMap((p) => STARTER_SLOTS.map((s) => state.teams[p.id].roster[s]?.pid)).filter(Boolean),
+  )
+  return themePeople(ctx, state.theme!).filter((c) => !dealt.has(c.id) && !rostered.has(c.pid))
+}
+
+// The clue objects (with their tests) for the lot on the block, in reveal
+// order. Host-side only - guests see the texts in the snapshot.
+export function lotClues(state: AuctionState, ctx: DraftCtx): Clue[] {
+  const lot = state.lot
+  if (!lot || !state.mystery || !lot.cardId) return []
+  return pickClues(cardById(ctx, lot.cardId), mysteryPeople(state, ctx), state.seed).slice(0, lot.shown ?? CLUES_TO_OPEN)
 }
 
 // What a team may still spend on one player: keep $1 for every other
@@ -411,9 +471,8 @@ function revealNext(state: AuctionState, ctx: DraftCtx): AuctionState {
   const unfilled = Object.values(state.teams).filter((t) => !teamFull(t))
   if (unfilled.length === 0 || state.lotIndex >= AUCTION_LOT_CAP) return finishAuction(state, ctx)
 
-  const usable = state.pool
-    .map((id) => cardById(ctx, id))
-    .filter((card) => unfilled.some((team) => hasOpenFor(state, team, card) && maxBid(team) >= 1))
+  const source = state.mystery ? mysteryPeople(state, ctx) : state.pool.map((id) => cardById(ctx, id))
+  const usable = source.filter((card) => unfilled.some((team) => hasOpenFor(state, team, card) && maxBid(team) >= 1))
   if (usable.length === 0) return finishAuction(state, ctx)
 
   const rng = mulberry32(hashSeed(`${state.seed}:lot:${state.lotIndex}`))
@@ -427,26 +486,41 @@ function revealNext(state: AuctionState, ctx: DraftCtx): AuctionState {
     )
 
   // Pace the stars: cycle a quality band per lot so the block always has
-  // rhythm - a headliner, then mid-tier fights, then value shopping.
+  // rhythm - a headliner, then mid-tier fights, then value shopping. The
+  // mystery lottery is weighted the same way but its fourth beat is the
+  // WHOLE pool - anyone can walk out, scrubs included.
   const sorted = [...usable].sort((a, b) => b.ovr - a.ovr)
-  const bandOf = [
-    [0, 0.15],
-    [0.15, 0.45],
-    [0.45, 0.8],
-    [0.15, 0.45],
-  ][state.lotIndex % 4]
+  const bandOf = (
+    state.mystery
+      ? [
+          [0, 0.08],
+          [0.08, 0.3],
+          [0.3, 0.6],
+          [0, 1],
+        ]
+      : [
+          [0, 0.15],
+          [0.15, 0.45],
+          [0.45, 0.8],
+          [0.15, 0.45],
+        ]
+  )[state.lotIndex % 4]
   let band = sorted.slice(Math.floor(sorted.length * bandOf[0]), Math.max(Math.floor(sorted.length * bandOf[0]) + 1, Math.ceil(sorted.length * bandOf[1])))
   if (band.length === 0) band = sorted
 
   const weighted = band.flatMap((card) => Array.from({ length: Math.max(1, demand(card)) }, () => card))
   const card = weighted[Math.floor(rng() * weighted.length)]
 
-  return {
+  const next: AuctionState = {
     ...state,
     pool: state.pool.filter((id) => id !== card.id),
+    dealt: state.mystery ? [...state.dealt, card.id] : state.dealt,
     lot: { cardId: card.id, price: 0, leaderId: null, stage: 'open', passed: [] },
     lotIndex: state.lotIndex + 1,
   }
+  if (!state.mystery) return next
+  const clues = pickClues(card, mysteryPeople(next, ctx), state.seed).map((c) => c.text)
+  return { ...next, lot: { ...next.lot!, clues, shown: Math.min(CLUES_TO_OPEN, clues.length) } }
 }
 
 // Auction over (or safety cap hit): any unfinished team auto-fills its
@@ -482,9 +556,9 @@ function closeLot(state: AuctionState, ctx: DraftCtx): AuctionState {
   if (lot.leaderId) {
     next = place(state, lot.leaderId, card, lot.price) as AuctionState
     const winner = state.players.find((p) => p.id === lot.leaderId)
-    next = { ...next, lastResult: { name: card.name, price: lot.price, winnerName: winner?.name ?? null } }
+    next = { ...next, lastResult: { cardId: card.id, name: card.name, price: lot.price, winnerName: winner?.name ?? null } }
   } else {
-    next = { ...state, lastResult: { name: card.name, price: 0, winnerName: null } }
+    next = { ...state, lastResult: { cardId: card.id, name: card.name, price: 0, winnerName: null } }
   }
   return revealNext({ ...next, lot: null }, ctx)
 }
@@ -503,9 +577,20 @@ function applyAuction(state: AuctionState, action: PartyAction, ctx: DraftCtx): 
     const minAmount = lot.leaderId === null ? 1 : lot.price + 1
     const amount = Math.floor(action.amount)
     if (amount < minAmount || amount > maxBid(team)) return state
+    // Every bid buys the room one more clue (mystery), up to the cap.
+    const shown = state.mystery
+      ? Math.min(CLUES_MAX, lot.clues?.length ?? 0, (lot.shown ?? CLUES_TO_OPEN) + 1)
+      : lot.shown
     return {
       ...state,
-      lot: { ...lot, price: amount, leaderId: action.playerId, stage: 'open', passed: lot.passed },
+      lot: {
+        ...lot,
+        price: amount,
+        leaderId: action.playerId,
+        stage: 'open',
+        passed: lot.passed,
+        ...(state.mystery ? { shown } : {}),
+      },
     }
   }
 
@@ -543,11 +628,24 @@ export function auctionValue(state: AuctionState, ctx: DraftCtx, cardId: string)
   return Math.max(1, Math.round(1 + 27 * pct ** 2.2))
 }
 
+// A mystery bot can't see the card: it pays the crowd value of whoever the
+// visible clues could still be (user-confirmed), priced off theme rank.
+function mysteryValue(state: AuctionState, ctx: DraftCtx): number {
+  const people = mysteryPeople(state, ctx)
+  const ranked = [...people].sort((a, b) => b.ovr - a.ovr)
+  const rankOf = new Map(ranked.map((c, i) => [c.id, i]))
+  const valueOf = (c: Card) => {
+    const pct = ranked.length <= 1 ? 1 : 1 - (rankOf.get(c.id) ?? ranked.length - 1) / (ranked.length - 1)
+    return Math.max(1, Math.round(1 + 27 * pct ** 2.2))
+  }
+  return crowdValue(people, lotClues(state, ctx), valueOf)
+}
+
 export function cpuAuctionActions(state: AuctionState, ctx: DraftCtx): PartyAction[] {
   if (state.done || !state.lot) return []
   const lot = state.lot
   const card = cardById(ctx, lot.cardId)
-  const value = auctionValue(state, ctx, card.id)
+  const value = state.mystery ? mysteryValue(state, ctx) : auctionValue(state, ctx, card.id)
   const actions: PartyAction[] = []
   for (const player of state.players) {
     if (!player.isCpu) continue

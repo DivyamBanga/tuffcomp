@@ -141,8 +141,12 @@ export function initMatch(config: MatchConfig, players: DraftPlayer[], ctx: Draf
     finalsMvp: null,
   }
   if (config.mode !== 'themes') {
-    const init = config.mode === 'budget' ? initBudget : initAuction
-    const party = advancePartyCpu(init(players, config.seed, ctx, config.theme), ctx)
+    const party = advancePartyCpu(
+      config.mode === 'budget'
+        ? initBudget(players, config.seed, ctx, config.theme)
+        : initAuction(players, config.seed, ctx, config.theme, config.mode === 'mystery'),
+      ctx,
+    )
     const state: MatchState = { ...base, draft: null, party, positionless: party.positionless }
     return party.done ? finishPartyDraft(state) : state
   }

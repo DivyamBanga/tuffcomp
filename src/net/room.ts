@@ -30,6 +30,18 @@ export interface RoomEvents {
 
 const MAX_PLAYERS = 8
 
+// A MYSTERY AUCTION's open lot hides the player: guests get the clues
+// revealed so far and nothing that names him. The host keeps the truth.
+function redactForGuests(match: MatchState | null): MatchState | null {
+  const party = match?.party
+  if (!match || !party || party.kind !== 'auction' || !party.mystery || !party.lot) return match
+  const lot = party.lot
+  return {
+    ...match,
+    party: { ...party, lot: { ...lot, cardId: '', clues: (lot.clues ?? []).slice(0, lot.shown ?? 0) } },
+  }
+}
+
 // ------------------------------------------------------------------- host
 
 export class HostRoom {
@@ -166,7 +178,7 @@ export class HostRoom {
   }
 
   private publish() {
-    const msg: NetMessage = { t: 'SNAPSHOT', lobby: this.lobby, match: this.match }
+    const msg: NetMessage = { t: 'SNAPSHOT', lobby: this.lobby, match: redactForGuests(this.match) }
     for (const conn of this.conns.values()) conn.send(msg)
     this.events.onSnapshot(this.lobby, this.match)
   }

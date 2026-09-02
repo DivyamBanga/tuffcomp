@@ -39,6 +39,13 @@ Two more ways to draft with friends, both 5-man squads under the theme:
   around what the room still needs. $1 opens it, raises from anyone,
   passes are binding, and the host's clock calls going once, going twice,
   sold. Winner pays, player lands in the best spot.
+- Mystery auction: the same block, but you never see the face. Two clues
+  open the lot, every bid uncovers one more (four max), all from real data
+  and blurred on purpose: height band, a jersey color, the decade, a stat
+  band, hardware, a trait. Anyone in the theme can be under there, from a
+  99 club legend to a benchwarmer, and the game checks that every clue set
+  still fits at least four players spanning fifteen points of rating. The
+  hammer reveals him, even when nobody bid.
 
 The host picks the mode in room setup. Party leagues are just the room,
 no filler teams, and the winner still gets the full season or playoff sim.
@@ -84,12 +91,12 @@ npm run data:generate
 - PeerJS WebRTC for online rooms, no backend anywhere
 - Claude scout behind a one file Cloudflare Worker (worker/), key held as a
   Worker secret, never in the bundle
-- 134 tests with Vitest, deployed free on GitHub Pages
+- 148 tests with Vitest, deployed free on GitHub Pages
 
 ## Status
 
 v4 is live: all of NBA history, 2K style ratings, 60+ themes with a
 picker, unlimited blind typing, positionless drafts, live keystrokes in
 rooms, a talent-first sim where the best team actually wins, and party
-modes (the $15 dollar table and the $50 auction). See PRD.md for the
-full design.
+modes (the $15 dollar table, the $50 auction, and the mystery auction).
+See PRD.md for the full design.

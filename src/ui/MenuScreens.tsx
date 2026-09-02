@@ -233,10 +233,11 @@ export function ScoutScreen() {
 
 // ------------------------------------------------------------------- setup
 
-const DRAFT_MODES: { mode: 'themes' | 'budget' | 'auction'; label: string; hint: string }[] = [
+const DRAFT_MODES: { mode: 'themes' | 'budget' | 'auction' | 'mystery'; label: string; hint: string }[] = [
   { mode: 'themes', label: 'THEME TYPING', hint: 'Name your 8 from memory.' },
   { mode: 'budget', label: 'DOLLAR TABLE', hint: '$15, five shelves, build your five.' },
   { mode: 'auction', label: 'AUCTION', hint: '$50, live bidding, the hammer decides.' },
+  { mode: 'mystery', label: 'MYSTERY AUCTION', hint: '$50, clues only, revealed at the hammer. Anyone could be under there.' },
 ]
 
 export function SetupScreen() {

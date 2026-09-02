@@ -197,6 +197,28 @@ random), no filler teams - every seat is a franchise:
 - Bots play both modes (value-priced bidding, feasible best-talent picks).
   Positionless themes work in both. After the draft: the normal preview,
   scout, and season/playoff sim.
+- MYSTERY AUCTION (v4.3, 2026-09-01, user-confirmed): the auction engine
+  with clues instead of a face (`src/game/clues.ts`). The whole theme pool
+  can hit the block as a weighted lottery (bands top 8% / 8-30% / 30-60% /
+  ANYONE cycling per lot). A lot opens with 2 clues; every bid reveals one
+  more, max 4. Clues are blurred real facts across five families - body &
+  age (height band, weight class, age band, rookie year, guard/wing/big),
+  colors & era (one jersey color per franchise, the decade), stats
+  (PPG/RPG/APG bands, 3P% band incl. pre-line and zero-made, FG%, minutes),
+  hardware & draft (MVP/DPOY/6MOY/ROY, All-Star that season / never / other
+  years, ring or ringless, undrafted, draft slot band), traits & lists
+  (sniper, rim protector, floor general, glass eater, lockdown, bucket
+  getter, ball dominant, low usage, lefty, bald, international, Canadian,
+  bloodline, one-franchise, journeyman). Names never appear. The
+  anti-giveaway rule: every clue prefix ever shown must still fit >= 4
+  undealt players spanning >= 15 OVR (checked against the theme pool minus
+  dealt/rostered people); families are varied and the opening pair is
+  judged together. Bidders can't see the position, so any open slot is
+  fair game and a winner with no legal spot plays the best-fitting open
+  role. Bots pay the crowd value (mean value of every player the visible
+  clues could be). The host redacts guest snapshots (no card id, only the
+  revealed clue texts) so nobody can peek; the hammer reveals the player
+  on the winner's roster and in the result line - walks are revealed too.
 
 Placement: natural open starter slot first, else bench (or stretch when starters must fill).
 Rearrange freely anytime pre-tipoff via tap-two-slots-to-swap. Position legality: natural at

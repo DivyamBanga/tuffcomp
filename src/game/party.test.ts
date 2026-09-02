@@ -243,6 +243,77 @@ describe('auction', () => {
   })
 })
 
+// ---------------------------------------------------------- mystery auction
+
+describe('mystery auction', () => {
+  it('opens with two clues, a hidden lot, and the whole theme as the pool', () => {
+    const state = initAuction(FOUR, 42, ctx, 'era-90s', true)
+    expect(state.mystery).toBe(true)
+    expect(state.pool).toEqual([])
+    expect(state.dealt.length).toBe(1)
+    expect(state.lot!.clues!.length).toBeGreaterThanOrEqual(2)
+    expect(state.lot!.shown).toBe(2)
+    for (const p of FOUR) expect(state.teams[p.id].budget).toBe(AUCTION_START)
+  })
+
+  it('every bid buys the room one more clue, capped at four', () => {
+    let state = initAuction(FOUR, 42, ctx, 'era-90s', true)
+    const total = state.lot!.clues!.length
+    state = applyParty(state, { type: 'AUCTION_BID', playerId: 'p1', amount: 2 }, ctx) as AuctionState
+    expect(state.lot!.shown).toBe(Math.min(3, total))
+    state = applyParty(state, { type: 'AUCTION_BID', playerId: 'p2', amount: 3 }, ctx) as AuctionState
+    state = applyParty(state, { type: 'AUCTION_BID', playerId: 'p3', amount: 4 }, ctx) as AuctionState
+    state = applyParty(state, { type: 'AUCTION_BID', playerId: 'p4', amount: 5 }, ctx) as AuctionState
+    expect(state.lot!.shown).toBe(Math.min(4, total))
+  })
+
+  it('the hammer reveals the player onto the winner and in the result', () => {
+    let state = initAuction(FOUR, 42, ctx, 'era-90s', true)
+    const hidden = state.lot!.cardId
+    state = applyParty(state, { type: 'AUCTION_BID', playerId: 'p2', amount: 9 }, ctx) as AuctionState
+    state = applyAuctionTick(state, ctx)
+    state = applyAuctionTick(state, ctx)
+    state = applyAuctionTick(state, ctx)
+    expect(state.lastResult!.cardId).toBe(hidden)
+    expect(state.lastResult!.winnerName).toBe('Jay')
+    expect(STARTER_SLOTS.some((s) => state.teams.p2.roster[s]?.id === hidden)).toBe(true)
+    expect(state.teams.p2.budget).toBe(AUCTION_START - 9)
+  })
+
+  it('a walk still reveals who it was', () => {
+    let state = initAuction(FOUR, 42, ctx, 'era-90s', true)
+    const hidden = state.lot!.cardId
+    state = applyAuctionTick(state, ctx)
+    expect(state.lastResult!.cardId).toBe(hidden)
+    expect(state.lastResult!.winnerName).toBeNull()
+  })
+
+  it('the weighted lottery deals both legends and scrubs over a night', () => {
+    let state = initAuction(FOUR, 11, ctx, 'era-90s', true)
+    const ovrs: number[] = []
+    for (let i = 0; i < 40 && state.lot; i++) {
+      ovrs.push(pool.find((c) => c.id === state.lot!.cardId)!.ovr)
+      state = applyAuctionTick(state, ctx) // nobody bids: walk, next lot
+    }
+    expect(Math.max(...ovrs)).toBeGreaterThanOrEqual(90)
+    expect(Math.min(...ovrs)).toBeLessThan(78)
+  })
+
+  it('all-bot mystery night completes on crowd value with full fives', () => {
+    let state = initAuction(BOTS, 9, ctx, 'era-10s', true)
+    let guard = 0
+    while (!state.done && guard++ < 400) {
+      state = advancePartyCpu(state, ctx) as AuctionState
+      if (!state.done) state = applyAuctionTick(state, ctx)
+    }
+    expect(state.done).toBe(true)
+    for (const p of BOTS) {
+      for (const slot of STARTER_SLOTS) expect(state.teams[p.id].roster[slot], `${p.id} ${slot}`).not.toBeNull()
+      expect(state.teams[p.id].budget).toBeGreaterThanOrEqual(0)
+    }
+  })
+})
+
 // -------------------------------------------------------- table generator
 
 describe('buildBudgetTable', () => {

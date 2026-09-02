@@ -261,6 +261,51 @@ describe('host + guests over the fake wire', () => {
   })
 })
 
+describe('mystery auction over the fake wire', () => {
+  it('guests never receive the hidden player until the hammer', () => {
+    const factory = makeFakeNetwork()
+    let hostMatch: MatchState | null = null
+    const host = new HostRoom(
+      factory,
+      'TEST',
+      { playerId: 'host-1', name: 'Div' },
+      { mode: 'mystery', format: 'series', leagueSize: 2, seed: 3, theme: 'era-00s' },
+      ctx,
+      {
+        onSnapshot: (_l, m) => {
+          hostMatch = m
+        },
+        onError: () => {},
+      },
+    )
+    const g1 = joinRoom(factory, 'guest-1', 'Jay')
+    host.startMatch()
+    const hostLot = () => (hostMatch!.party as { lot: { cardId: string; clues?: string[]; shown?: number } }).lot
+    const guestLot = () => (g1.match()!.party as { lot: { cardId: string; clues?: string[]; shown?: number } }).lot
+
+    // Host knows; guest gets only the revealed clue texts.
+    expect(hostLot().cardId.length).toBeGreaterThan(0)
+    expect(guestLot().cardId).toBe('')
+    expect(guestLot().clues!.length).toBe(guestLot().shown)
+    expect(hostLot().clues!.length).toBeGreaterThanOrEqual(guestLot().clues!.length)
+
+    // A guest bid reveals one more clue to everyone, still no name.
+    g1.guest.sendAction({ type: 'PARTY', action: { type: 'AUCTION_BID', playerId: 'guest-1', amount: 4 } })
+    expect(guestLot().cardId).toBe('')
+    expect(guestLot().clues!.length).toBe(Math.min(3, hostLot().clues!.length))
+
+    // Hammer: the guest's own roster now shows exactly who they bought.
+    const hidden = hostLot().cardId
+    host.dispatchFrom('host-1', { type: 'AUCTION_TICK' })
+    host.dispatchFrom('host-1', { type: 'AUCTION_TICK' })
+    host.dispatchFrom('host-1', { type: 'AUCTION_TICK' })
+    const roster = g1.match()!.party!.teams['guest-1'].roster
+    expect(Object.values(roster).some((c) => c?.id === hidden)).toBe(true)
+    expect((g1.match()!.party as { lastResult: { cardId: string } }).lastResult.cardId).toBe(hidden)
+    host.destroy()
+  })
+})
+
 describe('auction party over the fake wire', () => {
   it('guests bid, spoofs and guest hammers are rejected, host clock sells', () => {
     const factory = makeFakeNetwork()

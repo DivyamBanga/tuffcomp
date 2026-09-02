@@ -73,6 +73,11 @@ const everAllStar = new Set(allStarRows.map((r) => r.player_id))
 // Draft history: 1947-2025, every row has a player_id.
 const draftedPids = new Set(draftRows.map((r) => r.player_id))
 const firstOverall = new Set(draftRows.filter((r) => num(r.overall_pick) === 1).map((r) => r.player_id))
+// Overall draft slot per player (earliest draft if ever re-drafted).
+const draftPickByPid = new Map()
+for (const r of [...draftRows].sort((a, b) => +a.season - +b.season)) {
+  if (!draftPickByPid.has(r.player_id) && num(r.overall_pick) > 0) draftPickByPid.set(r.player_id, num(r.overall_pick))
+}
 
 // Latest display name per franchise abbrev (e.g. SEA -> Seattle SuperSonics).
 const franchiseName = new Map()
@@ -452,6 +457,7 @@ const themeData = {
   everAllStar: onlyPool(everAllStar),
   firstOverall: onlyPool(firstOverall),
   undrafted: undrafted.sort(),
+  draftPick: Object.fromEntries([...draftPickByPid].filter(([pid]) => poolPids.has(pid)).sort()),
   rings: onlyPool(ringPids),
   oneTeam: oneTeam.sort(),
   journeymen: journeymen.sort(),

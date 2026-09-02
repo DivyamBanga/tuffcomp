@@ -14,11 +14,11 @@ import { pickDraftTheme, resolveTypedPick, themeById, themeNeedsPositionless } f
 
 // ---------------------------------------------------------------- config
 
-// Three draft modes. 'themes' is the flagship: a single theme deals at
+// Four draft modes. 'themes' is the flagship: a single theme deals at
 // the start and everyone answers the same question by TYPING names from
-// memory - unlimited guesses, no strikes, no easy board. 'budget' and
-// 'auction' are the 5-man party modes (see party.ts).
-export type DraftMode = 'themes' | 'budget' | 'auction'
+// memory - unlimited guesses, no strikes, no easy board. 'budget',
+// 'auction', and 'mystery' are the 5-man party modes (see party.ts).
+export type DraftMode = 'themes' | 'budget' | 'auction' | 'mystery'
 
 export interface DraftPlayer {
   id: string

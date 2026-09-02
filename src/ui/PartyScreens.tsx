@@ -213,6 +213,33 @@ const STAGE_LINES: Record<string, string> = {
   twice: 'GOING TWICE…',
 }
 
+// The mystery block: a faceless card and the clues out so far.
+function ClueBlock({ clues, total }: { clues: string[]; total: number }) {
+  const locked = Math.max(0, total - clues.length)
+  return (
+    <div className="pcard w-full max-w-sm">
+      <div className="photo-well flex h-24 items-center justify-center">
+        <span className="num text-6xl font-bold text-faint">?</span>
+      </div>
+      <div className="grid gap-1.5 px-3 pb-3 pt-2">
+        {clues.map((text, i) => (
+          <p key={i} className="animate-deal flex items-baseline gap-2 text-[13px] font-semibold leading-snug text-ink" style={{ animationDelay: `${i * 80}ms` }}>
+            <span className="num shrink-0 text-[9px] text-faint">{String(i + 1).padStart(2, '0')}</span>
+            <span>{text}</span>
+          </p>
+        ))}
+        {locked > 0 ? (
+          <p className="plate plate-faint mt-1 !text-[8.5px]">
+            {locked} MORE {locked === 1 ? 'CLUE' : 'CLUES'} LOCKED · EVERY BID REVEALS ONE
+          </p>
+        ) : (
+          <p className="plate plate-faint mt-1 !text-[8.5px]">ALL CLUES OUT · TRUST YOUR GUT</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function AuctionScreen({ match }: { match: MatchState }) {
   const { myId, dispatch } = useGame()
   const pool = usePool()
@@ -224,23 +251,28 @@ export function AuctionScreen({ match }: { match: MatchState }) {
 
   if (!pool) return <p className="plate animate-pulse py-16 text-center !text-[10px]">OPENING THE FLOOR…</p>
 
-  const card = lot ? pool.find((c) => c.id === lot.cardId)! : null
+  const mystery = party.mystery
+  // A guest's copy of an open mystery lot carries no card id at all.
+  const card = lot && lot.cardId ? (pool.find((c) => c.id === lot.cardId) ?? null) : null
+  const visibleClues = lot ? (lot.clues ?? []).slice(0, lot.shown ?? 0) : []
+  const revealed = party.lastResult ? (pool.find((c) => c.id === party.lastResult!.cardId) ?? null) : null
   const myTeam = party.teams[myId]
   const leader = party.players.find((p) => p.id === lot?.leaderId)
   const iLead = lot?.leaderId === myId
   const iPassed = lot ? lot.passed.includes(myId) : false
   const myMax = myTeam ? maxBid(myTeam) : 0
   const minNext = lot ? (lot.leaderId === null ? 1 : lot.price + 1) : 0
-  const openSlotFits =
-    card && myTeam
-      ? STARTER_SLOTS.some((s) => myTeam.roster[s] === null && (party.positionless || canPlaySlot(card, s)))
-      : false
+  const openSlotFits = myTeam
+    ? mystery
+      ? STARTER_SLOTS.some((s) => myTeam.roster[s] === null)
+      : !!card && STARTER_SLOTS.some((s) => myTeam.roster[s] === null && (party.positionless || canPlaySlot(card, s)))
+    : false
   const canAct = !!lot && !!myTeam && !iLead && !iPassed && openSlotFits && minNext <= myMax
   const bidAmount = Math.min(Math.max(raise ?? minNext, minNext), myMax)
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-4 px-3 py-5">
-      <StatusLine text={`AUCTION · $${myTeam?.budget ?? 0} LEFT · LOT ${party.lotIndex}`} />
+      <StatusLine text={`${mystery ? 'MYSTERY AUCTION' : 'AUCTION'} · $${myTeam?.budget ?? 0} LEFT · LOT ${party.lotIndex}`} />
 
       <Sheet>
         <ThemeHeader themeId={party.theme!} positionless={party.positionless} />
@@ -249,13 +281,17 @@ export function AuctionScreen({ match }: { match: MatchState }) {
         </div>
       </Sheet>
 
-      {card && lot && (
+      {lot && (mystery || card) && (
         <Sheet>
           <div className="flex flex-col items-center gap-3">
             {lot.stage !== 'open' && (
               <p className="headline animate-pulse text-2xl text-hot">{STAGE_LINES[lot.stage]}</p>
             )}
-            <PlayerCard card={card} />
+            {mystery ? (
+              <ClueBlock clues={visibleClues} total={lot.clues?.length ?? visibleClues.length} />
+            ) : (
+              <PlayerCard card={card!} />
+            )}
             <div className="flex items-baseline gap-3">
               {lot.leaderId === null ? (
                 <span className="plate !text-[10px]">NO BIDS YET · $1 OPENS IT</span>
@@ -305,11 +341,21 @@ export function AuctionScreen({ match }: { match: MatchState }) {
       )}
 
       {party.lastResult && (
-        <p className="plate text-center !text-[9.5px]">
-          {party.lastResult.winnerName
-            ? `SOLD · ${party.lastResult.name.toUpperCase()} TO ${party.lastResult.winnerName.toUpperCase()} FOR $${party.lastResult.price}`
-            : `NO BIDS · ${party.lastResult.name.toUpperCase()} WALKS`}
-        </p>
+        <Sheet pad={false}>
+          <div className="flex items-center gap-3 px-3 py-2.5">
+            {revealed && (
+              <div className="shrink-0 scale-[0.6] origin-left -mr-14">
+                <PlayerCard card={revealed} />
+              </div>
+            )}
+            <p className={`plate !text-[9.5px] ${mystery ? 'text-ink' : ''}`}>
+              {mystery ? 'IT WAS… ' : ''}
+              {party.lastResult.winnerName
+                ? `'${String(revealed?.season ?? '').slice(2)} ${party.lastResult.name.toUpperCase()} · SOLD TO ${party.lastResult.winnerName.toUpperCase()} FOR $${party.lastResult.price}`
+                : `'${String(revealed?.season ?? '').slice(2)} ${party.lastResult.name.toUpperCase()} · NOBODY BID · HE WALKS`}
+            </p>
+          </div>
+        </Sheet>
       )}
 
       <SquadSheets state={party} />
