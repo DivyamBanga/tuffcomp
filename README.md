@@ -38,7 +38,10 @@ Two more ways to draft with friends, both 5-man squads under the theme:
 - Auction: $50 a team. Players hit the block one at a time, smartly picked
   around what the room still needs. $1 opens it, raises from anyone,
   passes are binding, and the host's clock calls going once, going twice,
-  sold. Winner pays, player lands in the best spot.
+  sold. Winner pays, player lands in the best spot. No cherry-picking the
+  endgame: letting a no-bid lot walk burns a skip (2 plus the spots you
+  still need, max 5), and once you are out of skips the next one nobody
+  wants is yours at $1.
 - Mystery auction: the same block, but you never see the face. Two clues
   open the lot, every bid uncovers one more (four max), all from real data
   and blurred on purpose: height band, a jersey color, the decade, a stat
@@ -91,7 +94,7 @@ npm run data:generate
 - PeerJS WebRTC for online rooms, no backend anywhere
 - Claude scout behind a one file Cloudflare Worker (worker/), key held as a
   Worker secret, never in the bundle
-- 148 tests with Vitest, deployed free on GitHub Pages
+- 154 tests with Vitest, deployed free on GitHub Pages
 
 ## Status
 

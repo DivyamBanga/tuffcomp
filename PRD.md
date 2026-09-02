@@ -219,6 +219,16 @@ random), no filler teams - every seat is a franchise:
   clues could be). The host redacts guest snapshots (no card id, only the
   revealed clue texts) so nobody can peek; the hammer reveals the player
   on the winner's roster and in the result line - walks are revealed too.
+  Mystery clock: 18s to open, then GOING ONCE 8s / GOING TWICE 7s / SOLD
+  6s (normal auction 12/5/4/4).
+- SKIPS (v4.3, user-confirmed, both auctions): a skip is declining (pass
+  or clock) a lot you could have bought while NOBODY bid; losing a war or
+  letting a friend buy never counts. Allowance = 2 + open slots, capped at
+  5, reset whenever you buy. Out of skips, the next no-bid lot you are
+  eligible for is forced onto you at $1 (multiple tapped-out teams: most
+  open slots, then least money, then seat order). The safety net that
+  fills unfinished teams now hands out a seeded RANDOM fitting player, not
+  the best remaining, so stalling is never rewarded.
 
 Placement: natural open starter slot first, else bench (or stretch when starters must fill).
 Rearrange freely anytime pre-tipoff via tap-two-slots-to-swap. Position legality: natural at

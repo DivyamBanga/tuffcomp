@@ -6,6 +6,7 @@ import {
   budgetTurnId,
   feasibleBudgetPicks,
   maxBid,
+  skipsLeft,
   type AuctionState,
   type BudgetState,
   type PartyTeamState,
@@ -46,10 +47,13 @@ function WalletRow({
   teams,
   players,
   hotId,
+  skips,
 }: {
   teams: Record<string, PartyTeamState>
   players: { id: string; name: string }[]
   hotId: string | null
+  // Auction only: skips left per team before a walking lot is forced on them.
+  skips?: Record<string, number>
 }) {
   const { myId } = useGame()
   return (
@@ -57,6 +61,7 @@ function WalletRow({
       {players.map((p) => {
         const team = teams[p.id]
         const open = STARTER_SLOTS.filter((s) => team.roster[s] === null).length
+        const left = skips?.[p.id]
         return (
           <span
             key={p.id}
@@ -67,6 +72,11 @@ function WalletRow({
             <span className="headline text-[13px] text-ink">{p.id === myId ? 'YOU' : p.name}</span>
             <span className="num text-[13px] font-bold text-gold">${team.budget}</span>
             <span className="num text-[9px] text-faint">{open} LEFT</span>
+            {left !== undefined && open > 0 && (
+              <span className={`num text-[9px] ${left === 0 ? 'text-hot' : 'text-faint'}`}>
+                {left === 0 ? 'MUST BUY' : `${left} SKIP${left === 1 ? '' : 'S'}`}
+              </span>
+            )}
           </span>
         )
       })}
@@ -269,6 +279,11 @@ export function AuctionScreen({ match }: { match: MatchState }) {
     : false
   const canAct = !!lot && !!myTeam && !iLead && !iPassed && openSlotFits && minNext <= myMax
   const bidAmount = Math.min(Math.max(raise ?? minNext, minNext), myMax)
+  const mySkips = party.players.reduce<Record<string, number>>((acc, p) => {
+    acc[p.id] = skipsLeft(party, p.id)
+    return acc
+  }, {})
+  const outOfSkips = mySkips[myId] === 0
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-4 px-3 py-5">
@@ -277,7 +292,7 @@ export function AuctionScreen({ match }: { match: MatchState }) {
       <Sheet>
         <ThemeHeader themeId={party.theme!} positionless={party.positionless} />
         <div className="mt-3">
-          <WalletRow teams={party.teams} players={party.players} hotId={lot?.leaderId ?? null} />
+          <WalletRow teams={party.teams} players={party.players} hotId={lot?.leaderId ?? null} skips={mySkips} />
         </div>
       </Sheet>
 
@@ -319,9 +334,12 @@ export function AuctionScreen({ match }: { match: MatchState }) {
                   </Btn>
                 </span>
                 <Btn onClick={() => dispatch({ type: 'PARTY', action: { type: 'AUCTION_PASS', playerId: myId } })}>
-                  PASS
+                  {outOfSkips ? 'NO SKIPS LEFT' : 'PASS'}
                 </Btn>
-                <span className="plate plate-faint !text-[8.5px]">MAX ${myMax}</span>
+                <span className="plate plate-faint !text-[8.5px]">
+                  MAX ${myMax}
+                  {outOfSkips ? ' · IF NOBODY BIDS, HE IS YOURS AT $1' : ` · ${mySkips[myId]} SKIP${mySkips[myId] === 1 ? '' : 'S'} LEFT`}
+                </span>
               </div>
             ) : (
               <p className="plate plate-faint !text-[9px]">
@@ -351,7 +369,9 @@ export function AuctionScreen({ match }: { match: MatchState }) {
             <p className={`plate !text-[9.5px] ${mystery ? 'text-ink' : ''}`}>
               {mystery ? 'IT WAS… ' : ''}
               {party.lastResult.winnerName
-                ? `'${String(revealed?.season ?? '').slice(2)} ${party.lastResult.name.toUpperCase()} · SOLD TO ${party.lastResult.winnerName.toUpperCase()} FOR $${party.lastResult.price}`
+                ? party.lastResult.forced
+                  ? `'${String(revealed?.season ?? '').slice(2)} ${party.lastResult.name.toUpperCase()} · OUT OF SKIPS · ${party.lastResult.winnerName.toUpperCase()} IS STUCK WITH HIM FOR $1`
+                  : `'${String(revealed?.season ?? '').slice(2)} ${party.lastResult.name.toUpperCase()} · SOLD TO ${party.lastResult.winnerName.toUpperCase()} FOR $${party.lastResult.price}`
                 : `'${String(revealed?.season ?? '').slice(2)} ${party.lastResult.name.toUpperCase()} · NOBODY BID · HE WALKS`}
             </p>
           </div>

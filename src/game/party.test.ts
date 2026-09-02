@@ -8,6 +8,7 @@ import {
   applyParty,
   applyAuctionTick,
   AUCTION_START,
+  auctionTickDelay,
   BUDGET_START,
   budgetTurnId,
   buildBudgetTable,
@@ -16,6 +17,8 @@ import {
   initBudget,
   maxBid,
   partyRosters,
+  skipAllowance,
+  skipsLeft,
   type AuctionState,
   type BudgetState,
 } from './party'
@@ -240,6 +243,100 @@ describe('auction', () => {
     const y = initAuction(FOUR, 123, ctx, 'era-80s')
     expect(x.lot).toEqual(y.lot)
     expect(x.pool).toEqual(y.pool)
+  })
+})
+
+// ------------------------------------------------------ skips and the hammer
+
+describe('skips: no cherry-picking the endgame', () => {
+  it('allowance is 2 + open slots, capped at 5', () => {
+    expect(skipAllowance(1)).toBe(3)
+    expect(skipAllowance(2)).toBe(4)
+    expect(skipAllowance(3)).toBe(5)
+    expect(skipAllowance(5)).toBe(5)
+  })
+
+  it('a walked lot burns a skip for everyone who could have bought him', () => {
+    let state = initAuction(FOUR, 42, ctx, 'era-90s')
+    for (const p of FOUR) expect(skipsLeft(state, p.id)).toBe(5)
+    state = applyAuctionTick(state, ctx) // nobody bids: walk
+    for (const p of FOUR) expect(skipsLeft(state, p.id)).toBe(4)
+    // Buying resets your patience.
+    state = applyParty(state, { type: 'AUCTION_BID', playerId: 'p1', amount: 2 }, ctx) as AuctionState
+    for (let i = 0; i < 3; i++) state = applyAuctionTick(state, ctx) // once, twice, sold
+    expect(skipsLeft(state, 'p1')).toBe(5) // 4 open now -> allowance 5, skips 0
+    expect(skipsLeft(state, 'p2')).toBe(4)
+  })
+
+  it('out of skips, a walking lot is forced on you at $1 - the neediest first', () => {
+    let state = initAuction(FOUR, 42, ctx, 'era-90s')
+    // Everyone burns all five skips letting lots walk.
+    for (let i = 0; i < 5; i++) state = applyAuctionTick(state, ctx)
+    for (const p of FOUR) expect(skipsLeft(state, p.id)).toBe(0)
+    const before = state.lot!.cardId
+    state = applyAuctionTick(state, ctx) // nobody bids -> forced
+    expect(state.lastResult!.forced).toBe(true)
+    expect(state.lastResult!.price).toBe(1)
+    expect(state.lastResult!.cardId).toBe(before)
+    // All tied on open slots and money, so seat order: p1 is stuck with him.
+    expect(state.lastResult!.winnerName).toBe('Div')
+    expect(state.teams.p1.budget).toBe(AUCTION_START - 1)
+    expect(STARTER_SLOTS.some((s) => state.teams.p1.roster[s]?.id === before)).toBe(true)
+    // The forced buyer's patience resets; the others stay tapped out.
+    expect(skipsLeft(state, 'p1')).toBe(5)
+    expect(skipsLeft(state, 'p2')).toBe(0)
+    // Next walk lands on p2 (most open slots among the tapped-out).
+    state = applyAuctionTick(state, ctx)
+    expect(state.lastResult!.forced).toBe(true)
+    expect(state.lastResult!.winnerName).toBe('Jay')
+  })
+
+  it('losing a bidding war is not a skip; declining a no-bid lot is', () => {
+    let state = initAuction(FOUR, 42, ctx, 'era-90s')
+    state = applyParty(state, { type: 'AUCTION_BID', playerId: 'p2', amount: 3 }, ctx) as AuctionState
+    for (let i = 0; i < 3; i++) state = applyAuctionTick(state, ctx)
+    expect(state.lastResult!.winnerName).toBe('Jay')
+    expect(skipsLeft(state, 'p1')).toBe(5) // somebody bought him - no skip for anyone
+    // Explicit passes on a no-bid lot count too, and hammer it early.
+    for (const id of ['p1', 'p2', 'p3', 'p4']) {
+      state = applyParty(state, { type: 'AUCTION_PASS', playerId: id }, ctx) as AuctionState
+    }
+    expect(state.lastResult!.winnerName).toBeNull()
+    expect(skipsLeft(state, 'p1')).toBe(4)
+  })
+
+  it('a lone straggler cannot stall forever: forced takes finish the team', () => {
+    let state = initAuction(FOUR, 42, ctx, 'era-90s')
+    let guard = 0
+    // p1 passes on everything; p2-p4 buy whatever they can, cheaply.
+    while (!state.done && guard++ < 400) {
+      const lot = state.lot!
+      const others = ['p2', 'p3', 'p4'].filter((id) => STARTER_SLOTS.some((s) => state.teams[id].roster[s] === null))
+      const buyer = others.find((id) => !lot.passed.includes(id) && lot.leaderId !== id && maxBid(state.teams[id]) >= (lot.leaderId ? lot.price + 1 : 1))
+      if (buyer) {
+        state = applyParty(state, { type: 'AUCTION_BID', playerId: buyer, amount: lot.leaderId ? lot.price + 1 : 1 }, ctx) as AuctionState
+        for (let i = 0; i < 3 && state.lot?.cardId === lot.cardId; i++) state = applyAuctionTick(state, ctx)
+      } else {
+        state = applyAuctionTick(state, ctx) // p1 alone, passing by clock
+      }
+    }
+    expect(state.done).toBe(true)
+    for (const slot of STARTER_SLOTS) expect(state.teams.p1.roster[slot], slot).not.toBeNull()
+    // The straggler never got a free best-available: forced takes did it.
+    expect(state.lotIndex).toBeLessThan(80)
+  })
+
+  it('the mystery clock runs longer than the normal one', () => {
+    const normal = initAuction(FOUR, 42, ctx, 'era-90s')
+    const mystery = initAuction(FOUR, 42, ctx, 'era-90s', true)
+    expect(auctionTickDelay(normal)).toBe(12000)
+    expect(auctionTickDelay(mystery)).toBe(18000)
+    const bidN = applyParty(normal, { type: 'AUCTION_BID', playerId: 'p1', amount: 2 }, ctx) as AuctionState
+    const bidM = applyParty(mystery, { type: 'AUCTION_BID', playerId: 'p1', amount: 2 }, ctx) as AuctionState
+    expect(auctionTickDelay(bidN)).toBe(5000)
+    expect(auctionTickDelay(bidM)).toBe(8000)
+    expect(auctionTickDelay(applyAuctionTick(bidM, ctx))).toBe(7000)
+    expect(auctionTickDelay(applyAuctionTick(applyAuctionTick(bidM, ctx), ctx))).toBe(6000)
   })
 })
 

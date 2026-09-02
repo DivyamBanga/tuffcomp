@@ -92,7 +92,35 @@ export interface AuctionState extends PartyBase {
   dealt: string[] // card ids already put on the block (mystery)
   lot: AuctionLot | null
   lotIndex: number
-  lastResult: { cardId: string; name: string; price: number; winnerName: string | null } | null
+  // Skips per team: no-bid lots you were eligible for and declined. Out of
+  // skips, the next walking lot is yours at $1 (user-confirmed anti-stall).
+  skips: Record<string, number>
+  lastResult: { cardId: string; name: string; price: number; winnerName: string | null; forced?: boolean } | null
+}
+
+// How many no-bid lots a team may let walk before it must take one:
+// 2 + the slots it still needs, capped at 5. Patience shrinks as the
+// roster fills; buying anyone resets it.
+export function skipAllowance(openSlotCount: number): number {
+  return Math.min(5, 2 + openSlotCount)
+}
+
+export function skipsLeft(state: AuctionState, playerId: string): number {
+  const team = state.teams[playerId]
+  if (!team) return 0
+  return Math.max(0, skipAllowance(openSlots(team.roster).length) - (state.skips[playerId] ?? 0))
+}
+
+// The host's clock: how long until the next hammer tick for this lot.
+// Mystery lots get more time - people are reading clues, not faces.
+export function auctionTickDelay(state: AuctionState): number {
+  const lot = state.lot
+  if (!lot) return 0
+  const t = state.mystery
+    ? { open: 18000, once: 8000, twice: 7000, sold: 6000 }
+    : { open: 12000, once: 5000, twice: 4000, sold: 4000 }
+  if (lot.leaderId === null) return t.open
+  return lot.stage === 'open' ? t.once : lot.stage === 'once' ? t.twice : t.sold
 }
 
 export type PartyState = BudgetState | AuctionState
@@ -401,6 +429,7 @@ export function initAuction(
     dealt: [],
     lot: null,
     lotIndex: 0,
+    skips: Object.fromEntries(players.map((p) => [p.id, 0])),
     lastPick: null,
     lastResult: null,
     done: false,
@@ -524,9 +553,10 @@ function revealNext(state: AuctionState, ctx: DraftCtx): AuctionState {
 }
 
 // Auction over (or safety cap hit): any unfinished team auto-fills its
-// open slots with the best remaining fits at $1 a head, so every game
-// always reaches tip-off. Falls back past the drained reveal pool to the
-// whole theme pool (discarded lots included - nobody owns them).
+// open slots with a seeded RANDOM remaining fit at $1 a head - could be
+// fine, could be a scrub, never a reward for stalling (user-confirmed) -
+// so every game always reaches tip-off. Falls back past the drained
+// reveal pool to the whole theme pool (walked lots included).
 function finishAuction(state: AuctionState, ctx: DraftCtx): AuctionState {
   let current: AuctionState = { ...state, lot: null, done: true }
   const rostered = new Set(
@@ -536,9 +566,9 @@ function finishAuction(state: AuctionState, ctx: DraftCtx): AuctionState {
   for (const player of current.players) {
     let team = current.teams[player.id]
     while (!teamFull(team)) {
-      const pick = reserves
-        .filter((card) => !rostered.has(card.pid) && hasOpenFor(current, team, card))
-        .sort((a, b) => b.ovr - a.ovr)[0]
+      const fitting = reserves.filter((card) => !rostered.has(card.pid) && hasOpenFor(current, team, card))
+      const rng = mulberry32(hashSeed(`${current.seed}:fill:${player.id}:${openSlots(team.roster).length}`))
+      const pick = fitting[Math.floor(rng() * fitting.length)]
       if (!pick) break
       rostered.add(pick.pid)
       current = place(current, player.id, pick, Math.min(1, team.budget)) as AuctionState
@@ -549,16 +579,57 @@ function finishAuction(state: AuctionState, ctx: DraftCtx): AuctionState {
   return current
 }
 
+// Teams that could have taken this lot at all (open fitting slot, a
+// dollar to spend) - passed or not. Declining one of these with nobody
+// else bidding is a skip.
+function couldHaveBought(state: AuctionState, ctx: DraftCtx): PartyTeamState[] {
+  const card = cardById(ctx, state.lot!.cardId)
+  return Object.values(state.teams).filter((team) => hasOpenFor(state, team, card) && maxBid(team) >= 1)
+}
+
 function closeLot(state: AuctionState, ctx: DraftCtx): AuctionState {
   const lot = state.lot!
   const card = cardById(ctx, lot.cardId)
+  const nameOf = (id: string) => state.players.find((p) => p.id === id)?.name ?? null
   let next: AuctionState
+
   if (lot.leaderId) {
     next = place(state, lot.leaderId, card, lot.price) as AuctionState
-    const winner = state.players.find((p) => p.id === lot.leaderId)
-    next = { ...next, lastResult: { cardId: card.id, name: card.name, price: lot.price, winnerName: winner?.name ?? null } }
+    next = {
+      ...next,
+      skips: { ...next.skips, [lot.leaderId]: 0 }, // buying resets your patience
+      lastResult: { cardId: card.id, name: card.name, price: lot.price, winnerName: nameOf(lot.leaderId) },
+    }
+    return revealNext({ ...next, lot: null }, ctx)
+  }
+
+  // Nobody bid. Anyone out of skips is stuck with him at $1 - the neediest
+  // first (most open slots, then least money, then seat order). Everyone
+  // else who could have bought him burns a skip.
+  const eligible = couldHaveBought(state, ctx)
+  const exhausted = eligible
+    .filter((team) => (state.skips[team.playerId] ?? 0) >= skipAllowance(openSlots(team.roster).length))
+    .sort(
+      (a, b) =>
+        openSlots(b.roster).length - openSlots(a.roster).length ||
+        a.budget - b.budget ||
+        state.players.findIndex((p) => p.id === a.playerId) - state.players.findIndex((p) => p.id === b.playerId),
+    )
+  const stuck = exhausted[0] ?? null
+  const skips = { ...state.skips }
+  for (const team of eligible) {
+    if (team.playerId !== stuck?.playerId) skips[team.playerId] = (skips[team.playerId] ?? 0) + 1
+  }
+
+  if (stuck) {
+    next = place(state, stuck.playerId, card, 1) as AuctionState
+    next = {
+      ...next,
+      skips: { ...skips, [stuck.playerId]: 0 },
+      lastResult: { cardId: card.id, name: card.name, price: 1, winnerName: nameOf(stuck.playerId), forced: true },
+    }
   } else {
-    next = { ...state, lastResult: { cardId: card.id, name: card.name, price: 0, winnerName: null } }
+    next = { ...state, skips, lastResult: { cardId: card.id, name: card.name, price: 0, winnerName: null } }
   }
   return revealNext({ ...next, lot: null }, ctx)
 }

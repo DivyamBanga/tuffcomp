@@ -8,6 +8,7 @@ import { GuestRoom, HostRoom, realPeerFactory } from '../net/room'
 import type { Card } from '../types'
 import type { DraftCtx } from './draft'
 import { applyMatchAction, initMatch, type MatchAction, type MatchConfig, type MatchState } from './match'
+import { auctionTickDelay } from './party'
 import { loadTrophies, saveTrophy, type Trophy } from './trophies'
 
 export type Screen = 'home' | 'themePick' | 'setup' | 'join' | 'lobby' | 'game' | 'trophies'
@@ -63,9 +64,9 @@ let typingTimer: number | null = null
 let auctionTimer: number | null = null
 let auctionSig = ''
 
-// The auctioneer's clock (host only): 12s for an unwanted lot to die,
-// then a 5s/4s/4s GOING ONCE / GOING TWICE / SOLD ladder. Any state
-// change (bid, pass, new lot) re-arms it.
+// The auctioneer's clock (host only): a window for a first bid, then the
+// GOING ONCE / GOING TWICE / SOLD ladder (longer for mystery lots, see
+// auctionTickDelay). Any state change (bid, pass, new lot) re-arms it.
 function armAuctionClock(get: () => GameStore) {
   const { sessionMode, match } = get()
   const party = match?.party
@@ -86,7 +87,7 @@ function armAuctionClock(get: () => GameStore) {
   if (sig === auctionSig && auctionTimer !== null) return
   auctionSig = sig
   if (auctionTimer !== null) window.clearTimeout(auctionTimer)
-  const delay = lot.leaderId === null ? 12000 : lot.stage === 'open' ? 5000 : 4000
+  const delay = auctionTickDelay(party)
   auctionTimer = window.setTimeout(() => {
     auctionTimer = null
     hostRoom?.dispatchFrom(get().myId, { type: 'AUCTION_TICK' })
