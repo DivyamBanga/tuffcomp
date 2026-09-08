@@ -329,8 +329,21 @@ case (localStorage, tracks your rings).
 
 ---
 
-## 8. Online rooms (no backend)
+## 8. Online rooms
 
+Rooms ride the Cloudflare Worker (deployed 2026-09-07 at
+https://ringchasers-judge.ringchasers.workers.dev): a Durable Object per
+room code (`RoomRelay` in worker/judge-proxy.js) forwards WebSocket frames
+between the host and each guest over plain wss:// on 443, so any network
+reaches any other - no NAT punching, no ICE, no TURN, no third party. The
+host's browser stays the only authority; the relay is a pipe. Guests stay
+attached through a host drop (90s grace), and a returning host is
+re-announced its guests, so the host's reconnect keeps everyone. The
+client transport is `src/net/wsPeer.ts` behind the same WirePeer contract;
+the PeerJS WebRTC transport (with STUN/TURN via ice.ts) remains for local
+builds without the Worker URL. No accounts, free tier.
+
+Earlier design, still describing the PeerJS fallback:
 WebRTC peer-to-peer via PeerJS's free public broker - no accounts, no server, no cost, works
 from GitHub Pages (HTTPS).
 

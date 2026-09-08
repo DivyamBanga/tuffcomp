@@ -93,12 +93,13 @@ npm run data:generate
 
 - React, TypeScript, Vite, Tailwind, zustand
 - Pure TypeScript engines for evaluation and simulation, fully seeded and deterministic
-- PeerJS WebRTC for online rooms, no backend anywhere
-- Claude scout behind a one file Cloudflare Worker (worker/), key held as a
-  Worker secret, never in the bundle
-- The same Worker mints Cloudflare TURN credentials at /turn so friends on
-  strict networks can reach each other (PeerJS's free relays no longer
-  exist). Without it rooms fall back to STUN only
+- Online rooms ride a tiny Cloudflare Worker relay (worker/): one Durable
+  Object per room code forwards messages between the host and the guests
+  over plain wss on 443, so it works on any network. The host's browser is
+  still the only authority. Local builds without the Worker fall back to
+  PeerJS WebRTC
+- Claude scout behind the same Worker, key held as a Worker secret, never
+  in the bundle
 - 161 tests with Vitest, deployed free on GitHub Pages
 
 ## Status
