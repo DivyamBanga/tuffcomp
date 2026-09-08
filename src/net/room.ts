@@ -298,9 +298,9 @@ export class GuestRoom {
         else if (msg.t === 'TYPING') this.events.onTyping?.(msg.playerId, msg.text)
       })
       conn.onClose(() => events.onError('Connection to host closed'))
-      // The path to the host could not be built (no relay, blocked
-      // network). PeerJS reports it only here, and only here do we learn.
-      conn.onError(() => events.onError("Couldn't reach the host"))
+      // The path to the host could not be built. PeerJS reports an ICE
+      // failure only here; the relay says why (no such room, host gone).
+      conn.onError((err) => events.onError(err.message || "Couldn't reach the host"))
       conn.send({ t: 'HELLO', playerId: me.playerId, name: me.name } satisfies NetMessage)
     })
   }
@@ -434,7 +434,7 @@ export async function realPeerFactory(iceServers: RTCIceServer[]): Promise<PeerF
           },
           onData: (h) => dataConn.on('data', h),
           onClose: (h) => dataConn.on('close', h),
-          onError: (h) => dataConn.on('error', (err) => h(err as Error)),
+          onError: (h) => dataConn.on('error', () => h(new Error("Couldn't reach the host"))),
           close: () => dataConn.close(),
         }
       },

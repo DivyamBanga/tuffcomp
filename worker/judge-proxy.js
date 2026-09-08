@@ -105,11 +105,117 @@ async function turnCredentials(env, cors) {
   return json(body, 200, cors)
 }
 
+// ------------------------------------------------------------ room relay
+//
+// A WebSocket relay per room code, so friends reach each other over plain
+// wss:// on 443 - no NAT punching, no TURN, works on any network. The host
+// connects to /room/<CODE>/host, each guest to /room/<CODE>/guest/<id>,
+// and the room's Durable Object forwards frames between them. The host's
+// browser stays the game's only authority - this is a pipe, not a brain.
+// Hibernation keeps idle rooms free. A host that drops has HOST_GRACE_MS
+// to come back (guests stay attached) before the room is declared dead.
+const HOST_GRACE_MS = 90_000
+const ROOM_CODE = /^[A-Z0-9]{4}$/
+
+export class RoomRelay {
+  constructor(ctx, env) {
+    this.ctx = ctx
+    this.env = env
+  }
+
+  async fetch(request) {
+    if (request.headers.get('Upgrade') !== 'websocket') return new Response('websocket only', { status: 426 })
+    const parts = new URL(request.url).pathname.split('/').filter(Boolean) // room, CODE, host|guest, id?
+    const role = parts[2]
+    const pair = new WebSocketPair()
+    const [client, server] = Object.values(pair)
+
+    if (role === 'host') {
+      for (const old of this.ctx.getWebSockets('host')) old.close(4000, 'replaced')
+      this.ctx.acceptWebSocket(server, ['host'])
+      server.serializeAttachment({ role: 'host' })
+      await this.ctx.storage.deleteAlarm()
+      // Re-announce everyone already in the room (a host coming back).
+      for (const guest of this.ctx.getWebSockets('guest')) {
+        const meta = guest.deserializeAttachment()
+        if (meta?.id) server.send(JSON.stringify({ t: 'join', id: meta.id }))
+      }
+    } else if (role === 'guest' && typeof parts[3] === 'string' && parts[3].length > 0 && parts[3].length <= 64) {
+      const id = parts[3]
+      const hosts = this.ctx.getWebSockets('host')
+      if (hosts.length === 0) {
+        // Say why in a frame first: a close code racing the handshake can
+        // reach some clients as a bare 1006.
+        server.accept()
+        server.send(JSON.stringify({ t: 'noroom' }))
+        server.close(4004, 'no room')
+        return new Response(null, { status: 101, webSocket: client })
+      }
+      for (const old of this.ctx.getWebSockets(`guest:${id}`)) old.close(4000, 'replaced')
+      this.ctx.acceptWebSocket(server, ['guest', `guest:${id}`])
+      server.serializeAttachment({ role: 'guest', id })
+      for (const host of hosts) host.send(JSON.stringify({ t: 'join', id }))
+    } else {
+      return new Response('bad path', { status: 400 })
+    }
+    return new Response(null, { status: 101, webSocket: client })
+  }
+
+  webSocketMessage(ws, raw) {
+    const meta = ws.deserializeAttachment()
+    let msg
+    try {
+      msg = JSON.parse(typeof raw === 'string' ? raw : '')
+    } catch {
+      return
+    }
+    if (!meta || !msg || typeof msg !== 'object') return
+    if (meta.role === 'host') {
+      if (msg.t === 'msg' && typeof msg.id === 'string') {
+        const frame = JSON.stringify({ t: 'msg', data: msg.data })
+        for (const guest of this.ctx.getWebSockets(`guest:${msg.id}`)) guest.send(frame)
+      } else if (msg.t === 'close' && typeof msg.id === 'string') {
+        for (const guest of this.ctx.getWebSockets(`guest:${msg.id}`)) guest.close(4001, 'closed by host')
+      }
+    } else if (meta.role === 'guest' && msg.t === 'msg') {
+      const frame = JSON.stringify({ t: 'msg', id: meta.id, data: msg.data })
+      for (const host of this.ctx.getWebSockets('host')) host.send(frame)
+    }
+  }
+
+  async webSocketClose(ws) {
+    const meta = ws.deserializeAttachment()
+    if (meta?.role === 'host') {
+      const others = this.ctx.getWebSockets('host').filter((s) => s !== ws)
+      if (others.length === 0) await this.ctx.storage.setAlarm(Date.now() + HOST_GRACE_MS)
+    } else if (meta?.role === 'guest') {
+      const frame = JSON.stringify({ t: 'leave', id: meta.id })
+      for (const host of this.ctx.getWebSockets('host')) host.send(frame)
+    }
+  }
+
+  async webSocketError(ws) {
+    return this.webSocketClose(ws)
+  }
+
+  async alarm() {
+    if (this.ctx.getWebSockets('host').length > 0) return
+    for (const guest of this.ctx.getWebSockets('guest')) guest.close(4002, 'host gone')
+  }
+}
+
 export default {
   async fetch(request, env) {
     const cors = corsHeaders(request.headers.get('Origin') ?? '')
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors })
-    if (new URL(request.url).pathname === '/turn') {
+    const path = new URL(request.url).pathname
+    if (path.startsWith('/room/')) {
+      const code = path.split('/')[2] ?? ''
+      if (!ROOM_CODE.test(code)) return json({ error: 'bad room code' }, 400, cors)
+      const stub = env.ROOMS.get(env.ROOMS.idFromName(code))
+      return stub.fetch(request)
+    }
+    if (path === '/turn') {
       if (request.method !== 'GET') return json({ error: 'GET only' }, 405, cors)
       return turnCredentials(env, cors)
     }

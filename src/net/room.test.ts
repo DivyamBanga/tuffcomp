@@ -32,7 +32,7 @@ class FakeWire implements WireConnection {
   // What PeerJS does when ICE fails on a connection that never opened:
   // an 'error', and NO 'close'.
   failNegotiation() {
-    for (const h of this.errorHandlers) h(new Error('Negotiation of connection failed.'))
+    for (const h of this.errorHandlers) h(new Error("Couldn't reach the host"))
   }
   close() {
     for (const h of this.closeHandlers) h()

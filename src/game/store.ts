@@ -5,7 +5,18 @@ import { themeById } from './themes'
 import { myPlayerId, saveName, savedName } from '../net/identity'
 import { makeRoomCode, type LobbySnapshot } from '../net/protocol'
 import { fetchIceServers } from '../net/ice'
-import { GuestRoom, HostRoom, realPeerFactory, type JoinStage } from '../net/room'
+import { GuestRoom, HostRoom, realPeerFactory, type JoinStage, type PeerFactory } from '../net/room'
+import { relayPeerFactory } from '../net/wsPeer'
+
+// Which pipe carries a room. With the Worker deployed (the site is built
+// with its URL), rooms ride its WebSocket relay: plain wss:// on 443, so
+// any network reaches any other. Without it (local dev), PeerJS WebRTC.
+const RELAY_URL = ((import.meta.env?.VITE_JUDGE_PROXY_URL as string | undefined) ?? '').trim()
+
+async function makePeerFactory(): Promise<PeerFactory> {
+  if (RELAY_URL) return relayPeerFactory(RELAY_URL)
+  return realPeerFactory(await fetchIceServers())
+}
 import type { Card } from '../types'
 import type { DraftCtx } from './draft'
 import { applyMatchAction, initMatch, type MatchAction, type MatchConfig, type MatchState } from './match'
@@ -273,7 +284,7 @@ export const useGame = create<GameStore>((set, get) => {
       set({ netStatus: 'connecting', netError: null, brokerOnline: true })
       try {
         const pool = await ensurePool(get, set)
-        const factory = await realPeerFactory(await fetchIceServers())
+        const factory = await makePeerFactory()
         const { config, myId, myName } = get()
         const seeded: MatchConfig = { ...config, seed: Math.floor(Math.random() * 2 ** 31) }
         const code = makeRoomCode()
@@ -322,7 +333,7 @@ export const useGame = create<GameStore>((set, get) => {
         set({ netStatus: 'error', netError: message })
       }
       try {
-        const factory = await realPeerFactory(await fetchIceServers())
+        const factory = await makePeerFactory()
         const { myId, myName } = get()
         const room = new GuestRoom(factory, code, { playerId: myId, name: myName || 'GUEST' }, {
           onSnapshot: applySnapshot,

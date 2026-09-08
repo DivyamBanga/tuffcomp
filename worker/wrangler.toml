@@ -2,5 +2,16 @@ name = "ringchasers-judge"
 main = "judge-proxy.js"
 compatibility_date = "2026-07-01"
 
+# The room relay: one Durable Object per room code forwards WebSocket
+# frames between the host and the guests (plain wss:// on 443, so it works
+# on any network). SQLite-backed so it runs on the free plan.
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RoomRelay"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomRelay"]
+
 # The Anthropic key is a secret, never a var:
 #   npx wrangler secret put ANTHROPIC_API_KEY
