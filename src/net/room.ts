@@ -251,17 +251,88 @@ const ICE_SERVERS: RTCIceServer[] = [
   },
 ]
 
+// --- diagnostics -----------------------------------------------------------
+// Verbose WebRTC/PeerJS logging to pinpoint WHY a peer can't join: does the
+// peer open, does the data channel connect, and crucially - does ICE ever
+// gather a `relay` candidate (proof TURN is working) or does it stall in
+// `checking`/`failed` (the signature of a NAT/firewall that needs TURN)?
+// Toggle off by setting localStorage 'ringchasers:netlog' to '0'.
+function netlogEnabled(): boolean {
+  try {
+    return localStorage.getItem('ringchasers:netlog') !== '0'
+  } catch {
+    return true
+  }
+}
+
+function netlog(...args: unknown[]) {
+  if (netlogEnabled()) console.info('[net]', ...args)
+}
+
+// Attach listeners to the underlying RTCPeerConnection. It's created during
+// negotiation, so it may not exist the instant a connection object appears -
+// retry briefly until PeerJS wires it up.
+function watchPeerConnection(dataConn: import('peerjs').DataConnection, tag: string, tries = 0) {
+  const pc = dataConn.peerConnection
+  if (!pc) {
+    if (tries < 40) setTimeout(() => watchPeerConnection(dataConn, tag, tries + 1), 50)
+    return
+  }
+  netlog(`${tag} pc ready · ice=${pc.iceConnectionState} conn=${pc.connectionState}`)
+  pc.addEventListener('iceconnectionstatechange', () =>
+    netlog(`${tag} iceConnectionState → ${pc.iceConnectionState}`),
+  )
+  pc.addEventListener('connectionstatechange', () =>
+    netlog(`${tag} connectionState → ${pc.connectionState}`),
+  )
+  pc.addEventListener('icegatheringstatechange', () =>
+    netlog(`${tag} iceGatheringState → ${pc.iceGatheringState}`),
+  )
+  pc.addEventListener('icecandidateerror', (e) => {
+    const err = e as RTCPeerConnectionIceErrorEvent
+    netlog(`${tag} ICE candidate error · url=${err.url} code=${err.errorCode} ${err.errorText}`)
+  })
+  pc.addEventListener('icecandidate', (e) => {
+    if (!e.candidate) {
+      netlog(`${tag} ICE gathering complete`)
+      return
+    }
+    // "typ host" = local, "srflx" = STUN-reflexive, "relay" = TURN. Seeing a
+    // relay candidate is proof TURN authenticated; never seeing one on a
+    // failing peer means TURN isn't working for them.
+    const m = /typ (\w+)/.exec(e.candidate.candidate)
+    netlog(`${tag} ICE candidate · ${m ? m[1] : '?'} · ${e.candidate.candidate}`)
+  })
+}
+
+function watchDataConn(dataConn: import('peerjs').DataConnection, tag: string) {
+  netlog(`${tag} data connection created → ${dataConn.peer}`)
+  watchPeerConnection(dataConn, tag)
+  dataConn.on('open', () => netlog(`${tag} data channel OPEN`))
+  dataConn.on('close', () => netlog(`${tag} data channel CLOSE`))
+  dataConn.on('error', (err) => netlog(`${tag} data channel ERROR · ${(err as Error).message}`))
+}
+
 // Wraps PeerJS (loaded lazily so unit tests never touch the network).
 export async function realPeerFactory(): Promise<PeerFactory> {
   const { default: Peer } = await import('peerjs')
   const options = { config: { iceServers: ICE_SERVERS } }
   return (peerId?: string) => {
+    netlog(`creating peer · requestedId=${peerId ?? '(anonymous)'}`)
     const peer = peerId ? new Peer(peerId, options) : new Peer(options)
+    peer.on('open', (id) => netlog(`peer OPEN · id=${id}`))
+    // PeerJS errors carry a `.type` (peer-unavailable, unavailable-id,
+    // network, webrtc, browser-incompatible...) that says far more than the
+    // message alone about why a join stalls.
+    peer.on('error', (err) => netlog(`peer ERROR · type=${(err as { type?: string }).type} · ${err.message}`))
+    peer.on('disconnected', () => netlog('peer DISCONNECTED from broker'))
+    peer.on('close', () => netlog('peer CLOSED'))
     return {
       onOpen: (handler) => peer.on('open', handler),
       onError: (handler) => peer.on('error', (err) => handler(err as Error)),
       onConnection: (handler) =>
         peer.on('connection', (dataConn) => {
+          watchDataConn(dataConn, 'host<-guest')
           const wire: WireConnection = {
             send: (data) => dataConn.send(data),
             onData: (h) => dataConn.on('data', h),
@@ -273,7 +344,9 @@ export async function realPeerFactory(): Promise<PeerFactory> {
           else dataConn.on('open', () => handler(wire))
         }),
       connect: (target) => {
+        netlog(`connecting to host peer → ${target}`)
         const dataConn = peer.connect(target, { reliable: true })
+        watchDataConn(dataConn, 'guest->host')
         return {
           send: (data) => {
             if (dataConn.open) dataConn.send(data)
@@ -284,7 +357,10 @@ export async function realPeerFactory(): Promise<PeerFactory> {
           close: () => dataConn.close(),
         }
       },
-      destroy: () => peer.destroy(),
+      destroy: () => {
+        netlog('destroying peer')
+        peer.destroy()
+      },
     }
   }
 }
