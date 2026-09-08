@@ -234,11 +234,29 @@ export class GuestRoom {
 
 // -------------------------------------------------------- real transport
 
+// ICE servers for WebRTC. STUN alone fails for peers behind symmetric NATs
+// and restrictive firewalls (corporate/university networks, some mobile
+// carriers) - those users can't establish a data channel and silently fail
+// to join. TURN relays the traffic so those connections still land.
+const ICE_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  {
+    urls: [
+      'turn:openrelay.metered.ca:80',
+      'turn:openrelay.metered.ca:443',
+      'turn:openrelay.metered.ca:443?transport=tcp',
+    ],
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+]
+
 // Wraps PeerJS (loaded lazily so unit tests never touch the network).
 export async function realPeerFactory(): Promise<PeerFactory> {
   const { default: Peer } = await import('peerjs')
+  const options = { config: { iceServers: ICE_SERVERS } }
   return (peerId?: string) => {
-    const peer = peerId ? new Peer(peerId) : new Peer()
+    const peer = peerId ? new Peer(peerId, options) : new Peer(options)
     return {
       onOpen: (handler) => peer.on('open', handler),
       onError: (handler) => peer.on('error', (err) => handler(err as Error)),
