@@ -344,6 +344,37 @@ from GitHub Pages (HTTPS).
 - PeerJS sits behind a one-function factory; the entire room logic is unit tested over an
   in-memory fake wire that JSON-round-trips every message.
 
+Connectivity hardening (2026-09-07, investigated from the installed PeerJS
+1.5.5 source and live probes; every fix user-confirmed):
+- ROOT CAUSE of "some players stuck at CONNECTING": PeerJS's built-in TURN
+  relays (eu-0/us-0.turn.peerjs.com) no longer exist - the project ended
+  free TURN in Dec 2023 and the hostnames have no DNS record - so players
+  whose networks can't punch through directly (carrier NAT, symmetric NAT,
+  UDP-blocked WiFi) could never connect. And the failure was silent: ICE
+  failure is reported only as an `error` on the DataConnection (never
+  subscribed) and `close()` on a never-opened connection emits no `close`;
+  nothing had a timeout.
+- RELAY: `src/net/ice.ts` asks the judge Worker's new GET /turn for
+  short-lived Cloudflare TURN credentials (Worker secrets TURN_KEY_ID +
+  TURN_API_TOKEN; 12h ttl, cached) and falls back to STUN-only (Google +
+  Cloudflare STUN) when the Worker isn't deployed. Open Relay was probed
+  and rejected: its classic public credentials are dead (400 after the 401
+  challenge, verified with a client validated against a reference TURN
+  server) and its shared-secret host answers nothing.
+- GUEST: the transport now surfaces DataConnection errors and broker
+  disconnects; joins show FINDING ROOM then CONNECTING TO HOST; a 25s
+  timeout retries once silently, then shows a plain error with RETRY.
+  Stale attempts are destroyed so they can't report into a new one.
+- HOST: PeerJS never reconnects to the broker by itself and no screen used
+  to show the loss, so a host could silently vanish for new joiners while
+  existing friends kept playing peer-to-peer. HostRoom now listens for
+  `disconnected`, reconnects with backoff (1.5s to 15s, tolerating "ID is
+  taken" while the broker's stale registration expires), reconnects
+  instantly when the tab returns to the foreground, and every room screen
+  shows a ROOM OFFLINE / RECONNECTING banner meanwhile (guests get a
+  CONNECTION LOST banner). The host also holds a screen wake lock so a
+  sleeping phone doesn't end the room.
+
 Solo mode never touches networking.
 
 ---

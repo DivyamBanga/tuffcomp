@@ -349,8 +349,9 @@ function ModeCell({ active, title, body, onClick }: { active: boolean; title: st
 // -------------------------------------------------------------------- join
 
 export function JoinScreen() {
-  const { joinRoom, goHome, netStatus, netError } = useGame()
+  const { joinRoom, goHome, netStatus, netError, joinStage } = useGame()
   const [code, setCode] = useState('')
+  const failed = netStatus === 'error'
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center gap-5 px-4 py-10">
@@ -365,13 +366,17 @@ export function JoinScreen() {
             className="field num w-44 !border-b-2 text-center text-4xl font-bold tracking-[0.35em] text-ink"
           />
         </label>
-        {netStatus === 'connecting' && <p className="plate mt-4 animate-pulse text-center !text-[10px]">CONNECTING…</p>}
-        {netError && <p className="plate mt-4 text-center !text-[10px] text-ink">{netError}</p>}
+        {netStatus === 'connecting' && (
+          <p className="plate mt-4 animate-pulse text-center !text-[10px]">
+            {joinStage === 'finding' ? 'FINDING ROOM…' : 'CONNECTING TO HOST…'}
+          </p>
+        )}
+        {failed && netError && <p className="plate mt-4 text-center !text-[10px] text-ink">{netError}</p>}
       </Sheet>
       <div className="flex justify-center gap-3">
         <Btn onClick={goHome}>BACK</Btn>
         <Btn primary onClick={() => joinRoom(code)} disabled={code.length !== 4 || netStatus === 'connecting'}>
-          GO →
+          {failed ? 'RETRY →' : 'GO →'}
         </Btn>
       </div>
     </div>

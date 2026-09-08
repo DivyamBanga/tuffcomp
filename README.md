@@ -26,7 +26,9 @@ field. The record is your score. 82-0 takes the ring.
 With friends: host a room, share the 4 letter code, pick the theme in
 setup, snake draft head to head while everyone watches the live keystrokes
 of whoever is on the clock, then a season with playoffs or straight
-best-of-7s. No accounts, no server, peer to peer.
+best-of-7s. No accounts, no server, peer to peer. If a join stalls you get
+told and can retry, and a host who drops off the room server climbs back
+on by itself while the game keeps going.
 
 ## Party modes
 
@@ -94,7 +96,10 @@ npm run data:generate
 - PeerJS WebRTC for online rooms, no backend anywhere
 - Claude scout behind a one file Cloudflare Worker (worker/), key held as a
   Worker secret, never in the bundle
-- 154 tests with Vitest, deployed free on GitHub Pages
+- The same Worker mints Cloudflare TURN credentials at /turn so friends on
+  strict networks can reach each other (PeerJS's free relays no longer
+  exist). Without it rooms fall back to STUN only
+- 161 tests with Vitest, deployed free on GitHub Pages
 
 ## Status
 

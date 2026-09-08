@@ -4,7 +4,8 @@ import { clearJudgeKey, judgeAvailable, judgeLeague, saveJudgeKey, type JudgeCon
 import { themeById } from './themes'
 import { myPlayerId, saveName, savedName } from '../net/identity'
 import { makeRoomCode, type LobbySnapshot } from '../net/protocol'
-import { GuestRoom, HostRoom, realPeerFactory } from '../net/room'
+import { fetchIceServers } from '../net/ice'
+import { GuestRoom, HostRoom, realPeerFactory, type JoinStage } from '../net/room'
 import type { Card } from '../types'
 import type { DraftCtx } from './draft'
 import { applyMatchAction, initMatch, type MatchAction, type MatchConfig, type MatchState } from './match'
@@ -28,6 +29,10 @@ interface GameStore {
   lobby: LobbySnapshot | null
   netStatus: NetStatus
   netError: string | null
+  // Guest: which leg of the join we're on. Host: are we reachable through
+  // the room server right now (false = ROOM OFFLINE, reconnecting).
+  joinStage: JoinStage
+  brokerOnline: boolean
   trophies: Trophy[]
   trophySaved: boolean
   autoSimming: boolean
@@ -49,7 +54,7 @@ interface GameStore {
   createRoom: () => Promise<void>
   hostAddCpu: () => void
   hostStart: () => void
-  joinRoom: (code: string) => Promise<void>
+  joinRoom: (code: string, attempt?: number) => Promise<void>
   dispatch: (action: MatchAction) => void
   sendTyping: (text: string) => void
   startCompetition: () => Promise<void>
@@ -110,11 +115,45 @@ function stopAutoSim(set: (partial: Partial<GameStore>) => void) {
   set({ autoSimming: false })
 }
 
+let joinTimer: number | null = null
+let wakeLock: { release: () => Promise<void> } | null = null
+let visibilityHandler: (() => void) | null = null
+
+// A join that hasn't completed in this long is not going to: a missing
+// relay or a dead host never reports back on its own.
+const JOIN_TIMEOUT_MS = 25_000
+
+function clearJoinTimer() {
+  if (joinTimer !== null) window.clearTimeout(joinTimer)
+  joinTimer = null
+}
+
+// Keep the host's phone awake: a sleeping phone ends the room for everyone.
+// Browsers drop the lock whenever the tab hides, so it's re-armed on return.
+async function holdWakeLock() {
+  try {
+    const nav = navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<{ release: () => Promise<void> }> } }
+    if (!nav.wakeLock || document.visibilityState !== 'visible') return
+    wakeLock = await nav.wakeLock.request('screen')
+  } catch {
+    wakeLock = null // unsupported or refused: nothing to do
+  }
+}
+
+function releaseWakeLock() {
+  void wakeLock?.release().catch(() => {})
+  wakeLock = null
+}
+
 function teardownNet() {
   hostRoom?.destroy()
   guestRoom?.destroy()
   hostRoom = null
   guestRoom = null
+  clearJoinTimer()
+  releaseWakeLock()
+  if (visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler)
+  visibilityHandler = null
   if (auctionTimer !== null) window.clearTimeout(auctionTimer)
   auctionTimer = null
   auctionSig = ''
@@ -140,7 +179,8 @@ export const useGame = create<GameStore>((set, get) => {
 
   const applySnapshot = (lobby: LobbySnapshot, match: MatchState | null) => {
     // A snapshot means something happened - any live-typing ghost is stale.
-    set({ lobby, match, netStatus: 'connected', screen: match ? 'game' : 'lobby', liveTyping: null })
+    clearJoinTimer()
+    set({ lobby, match, netStatus: 'connected', netError: null, screen: match ? 'game' : 'lobby', liveTyping: null })
     armAuctionClock(get)
     maybeRecordTrophy(match)
   }
@@ -160,6 +200,8 @@ export const useGame = create<GameStore>((set, get) => {
     lobby: null,
     netStatus: 'idle',
     netError: null,
+    joinStage: 'finding',
+    brokerOnline: true,
     trophies: loadTrophies(),
     trophySaved: false,
     autoSimming: false,
@@ -186,7 +228,16 @@ export const useGame = create<GameStore>((set, get) => {
     goHome: () => {
       stopAutoSim(set)
       teardownNet()
-      set({ screen: 'home', sessionMode: null, match: null, lobby: null, netStatus: 'idle', netError: null, trophySaved: false })
+      set({
+        screen: 'home',
+        sessionMode: null,
+        match: null,
+        lobby: null,
+        netStatus: 'idle',
+        netError: null,
+        brokerOnline: true,
+        trophySaved: false,
+      })
     },
     goSetup: (mode) => {
       void ensurePool(get, set) // the setup screen's theme menu needs it
@@ -219,18 +270,28 @@ export const useGame = create<GameStore>((set, get) => {
     },
 
     createRoom: async () => {
-      set({ netStatus: 'connecting', netError: null })
+      set({ netStatus: 'connecting', netError: null, brokerOnline: true })
       try {
         const pool = await ensurePool(get, set)
-        const factory = await realPeerFactory()
+        const factory = await realPeerFactory(await fetchIceServers())
         const { config, myId, myName } = get()
         const seeded: MatchConfig = { ...config, seed: Math.floor(Math.random() * 2 ** 31) }
         const code = makeRoomCode()
         hostRoom = new HostRoom(factory, code, { playerId: myId, name: myName || 'HOST' }, seeded, { pool }, {
           onSnapshot: applySnapshot,
           onTyping: applyTyping,
+          onBrokerStatus: (online) => set({ brokerOnline: online }),
           onError: (message) => set({ netStatus: 'error', netError: message }),
         })
+        // Back in the foreground: re-arm the wake lock and, if the room
+        // server dropped us while we were away, get back on right now.
+        visibilityHandler = () => {
+          if (document.visibilityState !== 'visible') return
+          void holdWakeLock()
+          hostRoom?.reconnectNow()
+        }
+        document.addEventListener('visibilitychange', visibilityHandler)
+        void holdWakeLock()
         set({ screen: 'lobby' })
       } catch (err) {
         set({ netStatus: 'error', netError: err instanceof Error ? err.message : 'Failed to create room' })
@@ -248,20 +309,44 @@ export const useGame = create<GameStore>((set, get) => {
       set({ trophySaved: false })
     },
 
-    joinRoom: async (code) => {
-      set({ netStatus: 'connecting', netError: null })
+    // Joining: FINDING ROOM (the room server) then CONNECTING TO HOST (the
+    // peer path + hello). A silent failure trips the timeout: the first
+    // one retries quietly, the second shows the error and a RETRY button.
+    joinRoom: async (code, attempt = 0) => {
+      guestRoom?.destroy() // a stale attempt must not report into this one
+      guestRoom = null
+      clearJoinTimer()
+      set({ netStatus: 'connecting', netError: null, joinStage: 'finding' })
+      const fail = (message: string) => {
+        clearJoinTimer()
+        set({ netStatus: 'error', netError: message })
+      }
       try {
-        const factory = await realPeerFactory()
+        const factory = await realPeerFactory(await fetchIceServers())
         const { myId, myName } = get()
-        guestRoom = new GuestRoom(factory, code, { playerId: myId, name: myName || 'GUEST' }, {
+        const room = new GuestRoom(factory, code, { playerId: myId, name: myName || 'GUEST' }, {
           onSnapshot: applySnapshot,
           onTyping: applyTyping,
-          onWelcome: () => set({ netStatus: 'connected' }),
-          onRejected: (reason) => set({ netStatus: 'error', netError: reason }),
-          onError: (message) => set({ netStatus: 'error', netError: message }),
+          onStage: (stage) => set({ joinStage: stage }),
+          onWelcome: () => {
+            clearJoinTimer()
+            set({ netStatus: 'connected' })
+          },
+          onRejected: fail,
+          onError: (message) => {
+            if (guestRoom !== room) return // from an attempt we already abandoned
+            fail(message)
+          },
         })
+        guestRoom = room
+        joinTimer = window.setTimeout(() => {
+          joinTimer = null
+          if (get().netStatus !== 'connecting' || guestRoom !== room) return
+          if (attempt === 0) void get().joinRoom(code, 1)
+          else fail("Couldn't reach the host. Check the code and the host's connection, then retry.")
+        }, JOIN_TIMEOUT_MS)
       } catch (err) {
-        set({ netStatus: 'error', netError: err instanceof Error ? err.message : 'Failed to join room' })
+        fail(err instanceof Error ? err.message : 'Failed to join room')
       }
     },
 

@@ -62,7 +62,7 @@ function corsHeaders(origin) {
   const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]
   return {
     'Access-Control-Allow-Origin': allowed,
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'content-type',
     'Access-Control-Max-Age': '86400',
   }
@@ -75,10 +75,44 @@ function json(body, status, cors) {
   })
 }
 
+// ------------------------------------------------------------ TURN relay
+//
+// PeerJS's built-in relays are gone, so rooms need one of their own.
+// Cloudflare TURN credentials are minted here (the TURN key is a long-term
+// secret and must never reach the browser). Setup, once, from worker/:
+//   Cloudflare dashboard -> Realtime -> TURN -> create a key, then
+//   npx wrangler secret put TURN_KEY_ID
+//   npx wrangler secret put TURN_API_TOKEN
+// Credentials live TURN_TTL seconds; one set is shared by every room that
+// opens while it's fresh.
+const TURN_TTL = 12 * 60 * 60
+let turnCache = null // { body, fetchedAt }
+
+async function turnCredentials(env, cors) {
+  if (!env.TURN_KEY_ID || !env.TURN_API_TOKEN) return json({ error: 'turn not configured' }, 404, cors)
+  const now = Date.now()
+  if (turnCache && now - turnCache.fetchedAt < TURN_TTL * 1000 * 0.5) return json(turnCache.body, 200, cors)
+  const upstream = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.TURN_API_TOKEN}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ ttl: TURN_TTL }),
+  })
+  if (!upstream.ok) return json({ error: 'turn upstream error' }, 502, cors)
+  const data = await upstream.json()
+  if (!Array.isArray(data?.iceServers)) return json({ error: 'turn upstream malformed' }, 502, cors)
+  const body = { iceServers: data.iceServers, ttl: TURN_TTL }
+  turnCache = { body, fetchedAt: now }
+  return json(body, 200, cors)
+}
+
 export default {
   async fetch(request, env) {
     const cors = corsHeaders(request.headers.get('Origin') ?? '')
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors })
+    if (new URL(request.url).pathname === '/turn') {
+      if (request.method !== 'GET') return json({ error: 'GET only' }, 405, cors)
+      return turnCredentials(env, cors)
+    }
     if (request.method !== 'POST') return json({ error: 'POST only' }, 405, cors)
 
     let body

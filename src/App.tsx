@@ -32,6 +32,28 @@ function GameRouter() {
   }
 }
 
+// A thin strip across the top of every room screen when the network is
+// not right: the host has lost the room server (new friends can't get in
+// until it's back - existing ones keep playing), or a guest lost the host.
+function NetBanner() {
+  const sessionMode = useGame((s) => s.sessionMode)
+  const brokerOnline = useGame((s) => s.brokerOnline)
+  const netStatus = useGame((s) => s.netStatus)
+  const netError = useGame((s) => s.netError)
+  const screen = useGame((s) => s.screen)
+  if (screen !== 'lobby' && screen !== 'game') return null
+  const hostOffline = sessionMode === 'host' && !brokerOnline
+  const guestLost = sessionMode === 'guest' && netStatus === 'error'
+  if (!hostOffline && !guestLost) return null
+  return (
+    <div className="sticky top-0 z-20 border-b border-hot bg-paper2 px-3 py-1.5 text-center">
+      <span className="plate animate-pulse !text-[9px] text-hot">
+        {hostOffline ? 'ROOM OFFLINE · RECONNECTING… · NEW JOINS WAIT, THE GAME GOES ON' : `CONNECTION LOST · ${netError ?? ''}`}
+      </span>
+    </div>
+  )
+}
+
 function App() {
   const screen = useGame((s) => s.screen)
   const hash = useHash()
@@ -44,6 +66,7 @@ function App() {
   }
   return (
     <div className="min-h-screen">
+      <NetBanner />
       {screen === 'home' && <HomeScreen />}
       {screen === 'themePick' && <ThemePickScreen />}
       {screen === 'setup' && <SetupScreen />}

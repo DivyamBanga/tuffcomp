@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { loadCards } from '../data/loadCards'
 import { cpuChooseTheme, type DraftCtx } from '../game/draft'
 import type { MatchConfig, MatchState } from '../game/match'
@@ -13,6 +13,7 @@ class FakeWire implements WireConnection {
   other: FakeWire | null = null
   private dataHandlers: Handler[] = []
   private closeHandlers: (() => void)[] = []
+  private errorHandlers: ((err: Error) => void)[] = []
   send(data: unknown) {
     // Structured-clone through JSON, like the real wire - catches any
     // non-serializable state sneaking into snapshots.
@@ -25,6 +26,14 @@ class FakeWire implements WireConnection {
   onClose(handler: () => void) {
     this.closeHandlers.push(handler)
   }
+  onError(handler: (err: Error) => void) {
+    this.errorHandlers.push(handler)
+  }
+  // What PeerJS does when ICE fails on a connection that never opened:
+  // an 'error', and NO 'close'.
+  failNegotiation() {
+    for (const h of this.errorHandlers) h(new Error('Negotiation of connection failed.'))
+  }
   close() {
     for (const h of this.closeHandlers) h()
     for (const h of this.other?.closeHandlers ?? []) h()
@@ -34,8 +43,14 @@ class FakeWire implements WireConnection {
 class FakePeer implements WirePeer {
   private openHandlers: ((id: string) => void)[] = []
   private connHandlers: ((conn: WireConnection) => void)[] = []
+  private errorHandlers: ((err: Error) => void)[] = []
+  private disconnectHandlers: (() => void)[] = []
   private registry: Map<string, FakePeer>
   private id: string
+  reconnectCalls = 0
+  // Simulate a broker that still holds our stale registration: the next
+  // N reconnects bounce with "ID is taken" (error + disconnected again).
+  reconnectRejections = 0
   constructor(registry: Map<string, FakePeer>, id: string) {
     this.registry = registry
     this.id = id
@@ -48,7 +63,28 @@ class FakePeer implements WirePeer {
   onConnection(handler: (conn: WireConnection) => void) {
     this.connHandlers.push(handler)
   }
-  onError() {}
+  onError(handler: (err: Error) => void) {
+    this.errorHandlers.push(handler)
+  }
+  onDisconnected(handler: () => void) {
+    this.disconnectHandlers.push(handler)
+  }
+  // The broker socket died (PeerJS: 'disconnected', no auto-reconnect).
+  dropBroker() {
+    this.registry.delete(this.id)
+    for (const h of this.disconnectHandlers) h()
+  }
+  reconnect() {
+    this.reconnectCalls++
+    if (this.reconnectRejections > 0) {
+      this.reconnectRejections--
+      for (const h of this.errorHandlers) h(new Error(`ID "${this.id}" is taken`))
+      for (const h of this.disconnectHandlers) h()
+      return
+    }
+    this.registry.set(this.id, this)
+    for (const h of this.openHandlers) h(this.id)
+  }
   connect(peerId: string): WireConnection {
     const target = this.registry.get(peerId)
     if (!target) throw new Error(`no peer ${peerId}`)
@@ -258,6 +294,143 @@ describe('host + guests over the fake wire', () => {
     room.host.addCpu('BOT ALPHA')
     expect(room.hostLobby().players.some((p) => p.isCpu)).toBe(true)
     room.host.destroy()
+  })
+})
+
+describe('connectivity: nothing hangs silently', () => {
+  it('a guest whose path to the host fails to build hears about it', () => {
+    const factory = makeFakeNetwork()
+    const room = makeRoom(factory)
+    let error: string | null = null
+    let stages: string[] = []
+    // Build a guest by hand so we can grab its wire and fail it.
+    const registry = factory as unknown as PeerFactory
+    const guestPeer = registry() as FakePeer
+    let wire: FakeWire | null = null
+    const originalConnect = guestPeer.connect.bind(guestPeer)
+    guestPeer.connect = (peerId: string) => {
+      wire = originalConnect(peerId) as FakeWire
+      return wire
+    }
+    new GuestRoom(() => guestPeer, 'TEST', { playerId: 'guest-1', name: 'Jay' }, {
+      onSnapshot: () => {},
+      onStage: (s) => stages.push(s),
+      onWelcome: () => {},
+      onRejected: () => {},
+      onError: (m) => {
+        error = m
+      },
+    })
+    expect(stages).toEqual(['handshake'])
+    // ICE failed: PeerJS emits only 'error' on the connection, never 'close'.
+    wire!.failNegotiation()
+    expect(error).toBe("Couldn't reach the host")
+    room.host.destroy()
+  })
+
+  it('a guest whose room-server link drops is told, not left connecting', () => {
+    const factory = makeFakeNetwork()
+    const room = makeRoom(factory)
+    const guestPeer = factory() as FakePeer
+    let error: string | null = null
+    new GuestRoom(() => guestPeer, 'TEST', { playerId: 'guest-1', name: 'Jay' }, {
+      onSnapshot: () => {},
+      onWelcome: () => {},
+      onRejected: () => {},
+      onError: (m) => {
+        error = m
+      },
+    })
+    guestPeer.dropBroker()
+    expect(error).toBe('Lost the connection to the room server')
+    room.host.destroy()
+  })
+
+  it('a host that loses the broker reports offline, keeps the game, and climbs back on', () => {
+    vi.useFakeTimers()
+    try {
+      const factory = makeFakeNetwork()
+      const registry = new Map<string, FakePeer>()
+      let hostPeer: FakePeer | null = null
+      const capturing: PeerFactory = (peerId?: string) => {
+        const peer = factory(peerId) as FakePeer
+        if (peerId) hostPeer = peer
+        registry.set(peerId ?? '', peer)
+        return peer
+      }
+      const status: boolean[] = []
+      const errors: string[] = []
+      const host = new HostRoom(
+        capturing,
+        'TEST',
+        { playerId: 'host-1', name: 'Div' },
+        CONFIG,
+        ctx,
+        {
+          onSnapshot: () => {},
+          onBrokerStatus: (online) => status.push(online),
+          onError: (m) => errors.push(m),
+        },
+      )
+      const g1 = joinRoom(factory, 'guest-1', 'Jay')
+      expect(g1.welcomed()).toBe(true)
+      expect(status).toEqual([true])
+
+      // The broker drops the host; the first two reconnects bounce off the
+      // stale registration ("ID is taken"), the third lands.
+      hostPeer!.reconnectRejections = 2
+      hostPeer!.dropBroker()
+      expect(status).toEqual([true, false])
+      expect(host.online).toBe(false)
+
+      // Existing guests keep playing peer-to-peer meanwhile.
+      host.addCpu('BOT A')
+      expect(g1.lobby().players.some((p) => p.isCpu)).toBe(true)
+
+      vi.advanceTimersByTime(1500) // attempt 1: rejected
+      vi.advanceTimersByTime(3000) // attempt 2: rejected
+      expect(host.online).toBe(false)
+      vi.advanceTimersByTime(6000) // attempt 3: back online
+      expect(hostPeer!.reconnectCalls).toBe(3)
+      expect(host.online).toBe(true)
+      expect(status).toEqual([true, false, true])
+      // Reconnect noise never became a scary error for the host.
+      expect(errors).toEqual([])
+
+      // A late joiner can now find the room again.
+      const g2 = joinRoom(factory, 'guest-2', 'Sam')
+      expect(g2.welcomed()).toBe(true)
+      host.destroy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a foregrounded tab reconnects immediately instead of waiting out the backoff', () => {
+    vi.useFakeTimers()
+    try {
+      const factory = makeFakeNetwork()
+      let hostPeer: FakePeer | null = null
+      const capturing: PeerFactory = (peerId?: string) => {
+        const peer = factory(peerId) as FakePeer
+        if (peerId) hostPeer = peer
+        return peer
+      }
+      const host = new HostRoom(capturing, 'TEST', { playerId: 'host-1', name: 'Div' }, CONFIG, ctx, {
+        onSnapshot: () => {},
+        onError: () => {},
+      })
+      hostPeer!.dropBroker()
+      expect(host.online).toBe(false)
+      host.reconnectNow()
+      expect(host.online).toBe(true)
+      expect(hostPeer!.reconnectCalls).toBe(1)
+      vi.advanceTimersByTime(20000) // no stray extra attempts queued
+      expect(hostPeer!.reconnectCalls).toBe(1)
+      host.destroy()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

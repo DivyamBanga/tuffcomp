@@ -1,5 +1,6 @@
 import { currentPlayerId, type DraftCtx, type DraftPlayer } from '../game/draft'
 import { applyMatchAction, initMatch, type MatchAction, type MatchConfig, type MatchState } from '../game/match'
+import { hasRelay } from './ice'
 import { peerIdForCode, type LobbySnapshot, type NetMessage } from './protocol'
 
 // Minimal surface of a PeerJS DataConnection / Peer, so the whole room can
@@ -8,6 +9,9 @@ export interface WireConnection {
   send(data: unknown): void
   onData(handler: (data: unknown) => void): void
   onClose(handler: () => void): void
+  // A connection that never opened reports its failure ONLY here (PeerJS
+  // emits no 'close' for it) - the reason joins used to hang forever.
+  onError(handler: (err: Error) => void): void
   close(): void
 }
 
@@ -15,6 +19,9 @@ export interface WirePeer {
   onOpen(handler: (id: string) => void): void
   onConnection(handler: (conn: WireConnection) => void): void
   onError(handler: (err: Error) => void): void
+  // The signaling broker dropped us; PeerJS never reconnects on its own.
+  onDisconnected(handler: () => void): void
+  reconnect(): void
   connect(peerId: string): WireConnection
   destroy(): void
 }
@@ -26,7 +33,14 @@ export interface RoomEvents {
   onError: (message: string) => void
   // Live keystrokes from the drafter on the clock (ephemeral, not state).
   onTyping?: (playerId: string, text: string) => void
+  // Host only: are we reachable through the broker right now?
+  onBrokerStatus?: (online: boolean) => void
 }
+
+// Host reconnect backoff: quick first retry, then ease off. The broker
+// may still hold our old registration for up to a minute, so early
+// attempts can bounce with "ID is taken" - that's fine, we keep going.
+const RECONNECT_DELAYS = [1500, 3000, 6000, 10000, 15000]
 
 const MAX_PLAYERS = 8
 
@@ -52,6 +66,10 @@ export class HostRoom {
   private match: MatchState | null = null
   private ctx: DraftCtx
   private events: RoomEvents
+  private brokerOnline = false
+  private destroyed = false
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private reconnectAttempt = 0
 
   constructor(
     peerFactory: PeerFactory,
@@ -71,9 +89,62 @@ export class HostRoom {
       players: [{ id: host.playerId, name: host.name, isCpu: false }],
     }
     this.peer = peerFactory(peerIdForCode(code))
-    this.peer.onError((err) => events.onError(err.message))
+    this.peer.onError((err) => {
+      // While reconnecting, "ID is taken" and friends are expected noise -
+      // the banner already says we're offline. Everything else surfaces.
+      if (!this.brokerOnline && this.reconnectAttempt > 0) return
+      events.onError(err.message)
+    })
     this.peer.onConnection((conn) => this.accept(conn))
-    this.peer.onOpen(() => this.publish())
+    this.peer.onOpen(() => {
+      this.brokerOnline = true
+      this.reconnectAttempt = 0
+      events.onBrokerStatus?.(true)
+      this.publish()
+    })
+    this.peer.onDisconnected(() => {
+      if (this.destroyed) return
+      if (this.brokerOnline) events.onBrokerStatus?.(false)
+      this.brokerOnline = false
+      this.scheduleReconnect()
+    })
+  }
+
+  // Existing data channels keep flowing without the broker; only NEW
+  // joiners need it. So we keep the same room code and quietly climb back
+  // on, backing off between attempts.
+  private scheduleReconnect() {
+    if (this.destroyed || this.reconnectTimer !== null) return
+    const delay = RECONNECT_DELAYS[Math.min(this.reconnectAttempt, RECONNECT_DELAYS.length - 1)]
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      this.reconnectAttempt++
+      this.tryReconnect()
+    }, delay)
+  }
+
+  private tryReconnect() {
+    if (this.destroyed || this.brokerOnline) return
+    try {
+      this.peer.reconnect()
+    } catch {
+      this.scheduleReconnect()
+    }
+  }
+
+  // The tab came back to the foreground: don't wait out the backoff.
+  reconnectNow() {
+    if (this.destroyed || this.brokerOnline) return
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    this.reconnectAttempt++
+    this.tryReconnect()
+  }
+
+  get online(): boolean {
+    return this.brokerOnline
   }
 
   private accept(conn: WireConnection) {
@@ -184,27 +255,39 @@ export class HostRoom {
   }
 
   destroy() {
+    this.destroyed = true
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
     this.peer.destroy()
   }
 }
 
 // ------------------------------------------------------------------ guest
 
+export type JoinStage = 'finding' | 'handshake'
+
+export interface GuestEvents extends RoomEvents {
+  onWelcome: () => void
+  onRejected: (reason: string) => void
+  // 'finding': reaching the room server; 'handshake': building the path
+  // to the host and saying hello.
+  onStage?: (stage: JoinStage) => void
+}
+
 export class GuestRoom {
   private peer: WirePeer
   private conn: WireConnection | null = null
-  private events: RoomEvents & { onWelcome: () => void; onRejected: (reason: string) => void }
+  private events: GuestEvents
 
-  constructor(
-    peerFactory: PeerFactory,
-    code: string,
-    me: { playerId: string; name: string },
-    events: RoomEvents & { onWelcome: () => void; onRejected: (reason: string) => void },
-  ) {
+  constructor(peerFactory: PeerFactory, code: string, me: { playerId: string; name: string }, events: GuestEvents) {
     this.events = events
     this.peer = peerFactory()
     this.peer.onError((err) => events.onError(err.message))
+    this.peer.onDisconnected(() => events.onError('Lost the connection to the room server'))
     this.peer.onOpen(() => {
+      events.onStage?.('handshake')
       const conn = this.peer.connect(peerIdForCode(code))
       this.conn = conn
       conn.onData((raw) => {
@@ -215,6 +298,9 @@ export class GuestRoom {
         else if (msg.t === 'TYPING') this.events.onTyping?.(msg.playerId, msg.text)
       })
       conn.onClose(() => events.onError('Connection to host closed'))
+      // The path to the host could not be built (no relay, blocked
+      // network). PeerJS reports it only here, and only here do we learn.
+      conn.onError(() => events.onError("Couldn't reach the host"))
       conn.send({ t: 'HELLO', playerId: me.playerId, name: me.name } satisfies NetMessage)
     })
   }
@@ -234,22 +320,11 @@ export class GuestRoom {
 
 // -------------------------------------------------------- real transport
 
-// ICE servers for WebRTC. STUN alone fails for peers behind symmetric NATs
-// and restrictive firewalls (corporate/university networks, some mobile
-// carriers) - those users can't establish a data channel and silently fail
-// to join. TURN relays the traffic so those connections still land.
-const ICE_SERVERS: RTCIceServer[] = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  {
-    urls: [
-      'turn:openrelay.metered.ca:80',
-      'turn:openrelay.metered.ca:443',
-      'turn:openrelay.metered.ca:443?transport=tcp',
-    ],
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-]
+// ICE servers come from net/ice.ts: STUN alone fails for peers behind
+// symmetric NATs and restrictive firewalls (corporate/university networks,
+// some mobile carriers), so a TURN relay is needed for those to land. The
+// relay credentials are minted by the Worker; the public Open Relay
+// credentials that used to sit here are dead (the server rejects them).
 
 // --- diagnostics -----------------------------------------------------------
 // Verbose WebRTC/PeerJS logging to pinpoint WHY a peer can't join: does the
@@ -314,11 +389,13 @@ function watchDataConn(dataConn: import('peerjs').DataConnection, tag: string) {
 }
 
 // Wraps PeerJS (loaded lazily so unit tests never touch the network).
-export async function realPeerFactory(): Promise<PeerFactory> {
+// `iceServers` replaces PeerJS's defaults, whose built-in TURN relays no
+// longer exist (see net/ice.ts).
+export async function realPeerFactory(iceServers: RTCIceServer[]): Promise<PeerFactory> {
   const { default: Peer } = await import('peerjs')
-  const options = { config: { iceServers: ICE_SERVERS } }
+  const options = { config: { iceServers } }
   return (peerId?: string) => {
-    netlog(`creating peer · requestedId=${peerId ?? '(anonymous)'}`)
+    netlog(`creating peer · requestedId=${peerId ?? '(anonymous)'} · ice=${hasRelay(iceServers) ? 'stun+relay' : 'stun-only (no relay: Worker /turn not configured)'}`)
     const peer = peerId ? new Peer(peerId, options) : new Peer(options)
     peer.on('open', (id) => netlog(`peer OPEN · id=${id}`))
     // PeerJS errors carry a `.type` (peer-unavailable, unavailable-id,
@@ -330,6 +407,8 @@ export async function realPeerFactory(): Promise<PeerFactory> {
     return {
       onOpen: (handler) => peer.on('open', handler),
       onError: (handler) => peer.on('error', (err) => handler(err as Error)),
+      onDisconnected: (handler) => peer.on('disconnected', () => handler()),
+      reconnect: () => peer.reconnect(),
       onConnection: (handler) =>
         peer.on('connection', (dataConn) => {
           watchDataConn(dataConn, 'host<-guest')
@@ -337,6 +416,7 @@ export async function realPeerFactory(): Promise<PeerFactory> {
             send: (data) => dataConn.send(data),
             onData: (h) => dataConn.on('data', h),
             onClose: (h) => dataConn.on('close', h),
+            onError: (h) => dataConn.on('error', (err) => h(err as Error)),
             close: () => dataConn.close(),
           }
           // PeerJS queues sends until open; normalize by exposing after open.
@@ -354,6 +434,7 @@ export async function realPeerFactory(): Promise<PeerFactory> {
           },
           onData: (h) => dataConn.on('data', h),
           onClose: (h) => dataConn.on('close', h),
+          onError: (h) => dataConn.on('error', (err) => h(err as Error)),
           close: () => dataConn.close(),
         }
       },
